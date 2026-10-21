@@ -1,0 +1,12 @@
+{
+  "name": "money-diary",
+  "version": "1.0.0",
+  "description": "共有できる家計簿アプリ (ログイン / 共有 / 繰り返し / 無限カテゴリ / 検索ジャンプ / 高速起動)",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test test/*.test.js"
+  }
+}
