@@ -26,6 +26,15 @@
    Windows なら `deploy.bat` をダブルクリックするだけでも同じことができます。
    公開 URL は `https://<プロジェクトID>.web.app` です。
 
+### 自動公開 (GitHub Actions)
+`master` に更新が入るたびに、テスト → 公開が自動で走ります。最初に1回だけ設定してください。
+1. Firebase コンソール → プロジェクトの設定 → **サービス アカウント** → **新しい秘密鍵を生成** (JSON ファイルがダウンロードされます)
+2. GitHub のリポジトリ → Settings → Secrets and variables → Actions → **New repository secret**
+   - Name: `FIREBASE_SERVICE_ACCOUNT` / Secret: JSON ファイルの中身をそのまま貼り付け
+3. Actions タブ → Deploy to Firebase → **Run workflow**
+
+秘密鍵は第三者に見せないでください (リポジトリにコミットしない・チャットに貼らない)。
+
 ### 料金
 Spark (無料) プランの範囲で動きます。家族数人での利用なら通常は無料枠に収まります (Firestore 読み取り 5万/日・書き込み 2万/日)。
 
