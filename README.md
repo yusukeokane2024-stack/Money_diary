@@ -22,6 +22,7 @@
    npx firebase login
    npm run deploy     # build → Hosting と Firestore ルールを公開
    ```
+   Windows なら `deploy.bat` をダブルクリックするだけでも同じことができます。
    公開 URL は `https://<プロジェクトID>.web.app` です。
 
 ### 料金
