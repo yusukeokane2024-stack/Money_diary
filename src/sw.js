@@ -1,6 +1,6 @@
 // アプリシェルをキャッシュ優先で配信 (裏で更新) → 2回目以降の起動はネットワーク待ちなし
-const VERSION = 'v2';
-const SHELL = ['/', '/index.html', '/app.js', '/boot.js', '/style.css', '/manifest.webmanifest', '/icon.svg'];
+const VERSION = '__VERSION__';
+const SHELL = __SHELL__;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

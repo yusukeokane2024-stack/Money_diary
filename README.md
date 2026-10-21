@@ -1,27 +1,57 @@
 # マネーダイアリー
 
-家族やパートナーと共有できる家計簿アプリ (PWA)。依存パッケージなし、Node.js 22.13+ だけで動きます。
-
-```sh
-npm start          # http://localhost:3000  (PORT / DB_FILE で変更可)
-npm test
-```
+家族やパートナーと共有できる家計簿アプリ (PWA)。Firebase (Hosting / Authentication / Firestore) で動きます。
 
 ## 機能
-- **ログイン**: メール+パスワード (scrypt)、HttpOnly Cookie セッション
-- **共有**: 家計簿ごとにメンバーを招待 (招待コード/リンク、7日間有効)。複数の家計簿を切替可
-- **繰り返し**: 毎日/毎週/毎月/毎年・N間隔・終了日。月末は自動で丸め (1/31 → 2/29)。開いた時に今日までの分を自動記録 (冪等)
+- **ログイン**: メール+パスワード (Firebase Authentication)
+- **共有**: 家計簿ごとに招待コード/リンクで家族を招待 (7日間有効)。複数の家計簿を切替可。**相手の記録がリアルタイムに反映**されます
+- **繰り返し**: 毎日/毎週/毎月/毎年・N間隔・終了日。月末は自動で丸め (1/31 → 2/29)。開いたときに今日までの分を自動記録
 - **カテゴリ**: 収入/支出別に無制限に追加、親子の階層、並び替え、色・アイコン。使用中のカテゴリは削除すると非表示になり過去データを保持
-- **検索 → ジャンプ**: メモ/カテゴリ/金額/期間/種類で検索し、タップでその月へ移動して該当行を強調
-- **高速起動**: Service Worker でシェルをキャッシュ、`boot.js` が JS 解析前に API 取得を開始、前回データを localStorage から即描画 (1リクエスト `bootstrap` で全データ取得)、gzip + ETag、ビルド・フレームワーク無し
+- **検索 → ジャンプ**: メモ/カテゴリ/金額/期間/種類で全期間を検索し、タップでその月へ移動して該当行を強調
+- **高速起動 / オフライン**: 前回の画面を localStorage から即描画 → Firebase を後読み。Service Worker で画面部品をキャッシュ、Firestore のオフライン永続化でオフラインでも記録でき、つながると自動同期
+
+## 公開手順 (Firebase)
+1. [Firebase コンソール](https://console.firebase.google.com/) でプロジェクトを作成
+2. **Authentication** → ログイン方法 → **メール/パスワード** を有効化
+3. **Firestore Database** → データベースを作成 (本番モード / リージョンは `asia-northeast1` など)
+4. プロジェクトの設定 → マイアプリ → **ウェブアプリ**を追加し、表示される `firebaseConfig` を `src/firebase-config.js` に貼り付け
+5. `.firebaserc` の `YOUR-FIREBASE-PROJECT-ID` をプロジェクト ID に書き換え
+6. デプロイ
+   ```sh
+   npm install
+   npx firebase login
+   npm run deploy     # build → Hosting と Firestore ルールを公開
+   ```
+   公開 URL は `https://<プロジェクトID>.web.app` です。
+
+### 料金
+Spark (無料) プランの範囲で動きます。家族数人での利用なら通常は無料枠に収まります (Firestore 読み取り 5万/日・書き込み 2万/日)。
+
+### 注意
+- 新規登録はだれでもできます (自分の家計簿を作るだけで、他人の家計簿は招待コードがない限り見られません)。登録を制限したい場合は Firebase コンソールの Authentication 設定で調整してください。
+- パスワード再設定メール・メール認証は未実装です。
+
+## 開発
+```sh
+npm install
+npm run dev        # エミュレータ起動 → http://127.0.0.1:5000/?emulator=1
+npm test           # 単体テスト + セキュリティルールのテスト (エミュレータ使用・Java が必要)
+npm run test:e2e   # 実ブラウザ(Playwright)での通しテスト (2ユーザーの共有まで)
+```
 
 ## 構成
-`server/` (http + node:sqlite) / `public/` (ES modules の SPA) / `test/`
+- `src/app.js` 画面 (最初に描画される。約28KB) / `src/data.js` Firebase とのやりとり (後から読み込み)
+- `src/lib/` 繰り返しの日付計算・検索 (純粋関数)
+- `firestore.rules` **データ保護の要**。メンバーだけが読み書きでき、招待コードがなければ参加できない
+- `build.mjs` esbuild でバンドル → `dist/`
 
-## 公開 (デプロイ)
-データは SQLite ファイルなので、**永続ディスク (`/data`) が使える**サービスを選んでください。必ず HTTPS で公開します (Cookie の Secure 属性は `X-Forwarded-Proto: https` で自動付与)。
-
-- **Render**: GitHub リポジトリを連携 → New → Blueprint で `render.yaml` を読み込み (永続ディスクは有料プランが必要)
-- **Fly.io / VPS など**: `docker build -t money-diary .` → `docker run -p 3000:3000 -v money-data:/data money-diary`
-
-環境変数: `PORT` (既定 3000) / `DB_FILE` (既定 `/data/money.db`)。バックアップは `DB_FILE` (と `-wal` ファイル) をコピーしてください。
+## データ構造
+```
+users/{uid}/memberships/{bookId}         自分が参加している家計簿の一覧
+books/{bookId}                           家計簿 (name, ownerId)
+books/{bookId}/members/{uid}             メンバー (role: owner | member)
+books/{bookId}/categories/{id}           カテゴリ (parentId で階層)
+books/{bookId}/transactions/{id}         収支
+books/{bookId}/recurrings/{id}           繰り返し設定 (nextN: 次に作る回)
+invites/{code}                           招待コード (bookId, expiresAt)
+```

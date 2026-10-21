@@ -1,12 +1,22 @@
 {
   "name": "money-diary",
-  "version": "1.0.0",
-  "description": "共有できる家計簿アプリ (ログイン / 共有 / 繰り返し / 無限カテゴリ / 検索ジャンプ / 高速起動)",
+  "version": "2.0.0",
+  "description": "共有できる家計簿アプリ (Firebase / PWA)",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.13" },
   "scripts": {
-    "start": "node server/index.js",
-    "test": "node --test test/*.test.js"
+    "build": "node build.mjs",
+    "dev": "node dev.mjs",
+    "deploy": "node build.mjs && firebase deploy",
+    "test:unit": "node --test test/*.test.js",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-money-diary \"node --test test/rules/*.test.js\"",
+    "test:e2e": "node test/e2e/run.mjs",
+    "test": "npm run test:unit && npm run test:rules"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "esbuild": "^0.28.2",
+    "firebase": "^13.0.0",
+    "firebase-tools": "^15.34.0"
   }
 }
