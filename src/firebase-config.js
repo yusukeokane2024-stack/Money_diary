@@ -1,8 +1,8 @@
-// Firebase コンソール → プロジェクトの設定 → マイアプリ (ウェブ) の firebaseConfig を貼り付けてください。
+// Firebase コンソール → プロジェクトの設定 → マイアプリ (ウェブ) の firebaseConfig。
 // これらの値は公開されても問題ありません (データの保護は firestore.rules が担います)。
 export const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR-PROJECT-ID.firebaseapp.com',
-  projectId: 'YOUR-PROJECT-ID',
-  appId: 'YOUR_APP_ID',
+  apiKey: 'AIzaSyCbydpHr7Wux0zaxCKiw3NxYjFsPJUkI1w',
+  authDomain: 'moneydiary-8eb7b.firebaseapp.com',
+  projectId: 'moneydiary-8eb7b',
+  appId: '1:266949944487:web:e15a832df3eb7262246782',
 };
