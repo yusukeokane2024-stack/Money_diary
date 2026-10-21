@@ -1,6 +1,8 @@
 // マネーダイアリー 画面 (ビルド時に束ねる / フレームワークなし)
 // Firebase を含む data.js は初回描画のあとで読み込む。前回のデータを localStorage から先に描画する。
 import { searchTx } from './lib/search.js';
+import { icon, CATEGORY_ICONS } from './lib/icons.js';
+import { monthGrid, compactYen, dayTotals } from './lib/calendar.js';
 
 const $app = document.getElementById('app');
 const LS = {
@@ -41,6 +43,16 @@ function h(tag, attrs, ...kids) {
   kids.forEach(add);
   return el;
 }
+/** アプリのロゴ (¥ を線で描いたマーク) */
+function mark() {
+  const t = document.createElement('template');
+  t.innerHTML = '<div class="mark"><svg viewBox="0 0 24 24"><path d="M6.5 4l5.5 8 5.5-8M12 12v8M8 14.5h8M8 17.5h8"/></svg></div>';
+  return t.content.firstChild;
+}
+const catChip = (c, size = 20) => h('div', { class: 'ic', style: `--c:${c?.color || '#8a8b91'}` }, icon(c?.icon || 'tag', size));
+const chev = () => h('span', { class: 'chev', style: 'display:flex;color:var(--sub)' }, icon('chevron-right', 18));
+const viewMode = () => (LS.get('md:view') === 'cal' ? 'cal' : 'list');
+
 function toast(msg) {
   const t = h('div', { class: 'toast' }, msg);
   document.body.append(t);
@@ -51,7 +63,7 @@ function toast(msg) {
 const S = {
   me: null, books: [], bookId: null, month: todayStr().slice(0, 7),
   cats: new Map(), kids: new Map(), members: new Map(), recs: [],
-  txs: null, all: null, hl: null, ready: false,
+  txs: null, all: null, hl: null, ready: false, selDay: null,
 };
 let D = null; // data.js (動的 import)
 let unsubBook = null, unsubMonth = null, unsubAll = null, matDone = false, lastRoute = '';
@@ -225,13 +237,16 @@ window.addEventListener('hashchange', onHash);
 function shell(title, body, { left, right, fab = true } = {}) {
   const { parts } = route();
   const cur = parts[0] || 'month';
-  const tab = (id, icon, label) => h('a', { href: `#/${id}`, class: cur === id ? 'on' : '' }, h('span', {}, icon), label);
+  const tab = (id, ic, label) => h('a', { href: `#/${id}`, class: cur === id ? 'on' : '' }, icon(ic, 22), label);
   const nodes = [
     h('div', { class: 'top' }, left || h('span', { style: 'width:40px' }), h('h1', {}, title), right || h('span', { style: 'width:40px' })),
     body,
-    h('nav', { class: 'tabs' }, tab('month', '📒', '家計簿'), tab('search', '🔍', '検索'), tab('recurring', '🔁', '繰り返し'), tab('settings', '⚙️', '設定')),
+    h('nav', { class: 'tabs' }, tab('month', 'wallet', '家計簿'), tab('search', 'search', '検索'), tab('recurring', 'repeat', '繰り返し'), tab('settings', 'sliders', '設定')),
   ];
-  if (fab) nodes.push(h('button', { class: 'fab', 'aria-label': '追加', onclick: () => openSheet({}) }, '＋'));
+  if (fab) {
+    nodes.push(h('button', { class: 'fab', 'aria-label': '追加',
+      onclick: () => openSheet({ date: cur === 'month' && viewMode() === 'cal' ? S.selDay : null }) }, icon('plus', 26)));
+  }
   const y = window.scrollY;
   $app.replaceChildren(...nodes);
   window.scrollTo(0, cur === lastRoute ? y : 0); // データ更新での再描画ではスクロール位置を保つ
@@ -241,7 +256,7 @@ function shell(title, body, { left, right, fab = true } = {}) {
 function render() {
   if (!S.me) return renderAuth();
   const { parts } = route();
-  if (!S.bookId || !S.ready && !S.cats.size && S.txs == null) return $app.replaceChildren(h('div', { class: 'splash' }, h('div', { class: 'splash-logo' }, '💰')));
+  if (!S.bookId || !S.ready && !S.cats.size && S.txs == null) return $app.replaceChildren(h('div', { class: 'splash' }, mark()));
   switch (parts[0]) {
     case 'search': return renderSearch();
     case 'recurring': return renderRecurring();
@@ -255,17 +270,19 @@ function render() {
 function txRow(t, { onclick, showDate = false } = {}) {
   const c = S.cats.get(t.categoryId);
   const who = S.members.size > 1 ? S.members.get(t.userId)?.name : null;
+  const sub = [showDate ? t.date.replaceAll('-', '/') : null, t.memo ? catName(t.categoryId) : null, who].filter(Boolean).join(' · ');
   return h('button', { class: 'row', 'data-id': t.id, onclick: onclick || (() => openSheet({ tx: t })) },
-    h('div', { class: 'ic', style: `--c:${c?.color || '#8e8e93'}` }, c?.icon || '🏷️'),
+    catChip(c),
     h('div', { class: 'mid' },
       h('div', { class: 't' }, t.memo || catName(t.categoryId)),
-      h('div', { class: 's' }, [showDate ? t.date.replaceAll('-', '/') : null, t.memo ? catName(t.categoryId) : null, who, t.recurringId ? '🔁' : null].filter(Boolean).join(' · '))),
-    h('div', { class: 'amt ' + (t.type === 'expense' ? 'exp' : 'inc') }, (t.type === 'expense' ? '-' : '+') + yen(t.amount)));
+      h('div', { class: 's' }, sub, t.recurringId && icon('repeat', 12))),
+    h('div', { class: 'amt num ' + (t.type === 'income' ? 'inc' : '') }, (t.type === 'expense' ? '-' : '+') + yen(t.amount)));
 }
 
 // ---------- month view ----------
 function renderMonth() {
   const txs = S.txs;
+  const view = viewMode();
   let inc = 0, exp = 0;
   const byCat = new Map();
   for (const t of txs || []) {
@@ -277,29 +294,39 @@ function renderMonth() {
     }
   }
   const parts = [...byCat].sort((a, b) => b[1] - a[1]);
-  const colorOf = (id) => S.cats.get(id)?.color || '#8e8e93';
-  const body = h('div', {},
-    h('div', { class: 'card' },
-      h('div', { class: 'summary' },
-        h('div', {}, h('small', {}, '収入'), h('b', { class: 'inc' }, yen(inc))),
-        h('div', {}, h('small', {}, '支出'), h('b', { class: 'exp' }, yen(exp))),
-        h('div', {}, h('small', {}, '収支'), h('b', {}, (inc - exp < 0 ? '-' : '') + yen(Math.abs(inc - exp))))),
-      exp > 0 && h('div', { class: 'bar' }, parts.map(([id, v]) => h('i', { style: `width:${(v / exp) * 100}%;background:${colorOf(id)}` }))),
-      exp > 0 && h('div', { class: 'legend' }, parts.slice(0, 6).map(([id, v]) =>
-        h('span', { style: `--c:${colorOf(id)}` }, `${S.cats.get(id)?.name || '未分類'} ${Math.round((v / exp) * 100)}%`)))),
-    txs == null ? h('div', { class: 'empty' }, '読み込み中…')
-      : txs.length ? dayGroups(txs) : h('div', { class: 'empty' }, 'この月の記録はありません', h('br'), '右下の ＋ から追加できます'));
+  const colorOf = (id) => S.cats.get(id)?.color || '#8a8b91';
+  const bal = inc - exp;
 
-  const monthIn = h('input', {
-    type: 'month', value: S.month, 'aria-label': '月を選択',
-    style: 'border:0;background:none;font:600 18px inherit;text-align:center;width:100%;color:inherit',
-    onchange: (e) => e.target.value && go(`#/month/${e.target.value}`),
+  // 検索からのジャンプ時はカレンダーでもその日を選択する
+  if (S.hl && txs) { const t = txs.find((x) => x.id === S.hl); if (t) S.selDay = t.date; }
+  if (!S.selDay || S.selDay.slice(0, 7) !== S.month) S.selDay = S.month === todayStr().slice(0, 7) ? todayStr() : `${S.month}-01`;
+
+  const summary = h('div', { class: 'card' },
+    h('div', { class: 'summary-head' }, h('small', {}, `${+S.month.slice(5)}月の収支`), h('div', { class: 'balance num' }, (bal < 0 ? '-' : '') + yen(Math.abs(bal)))),
+    h('div', { class: 'summary' },
+      h('div', { class: 's-inc' }, h('small', {}, '収入'), h('b', { class: 'num' }, yen(inc))),
+      h('div', { class: 's-exp' }, h('small', {}, '支出'), h('b', { class: 'num' }, yen(exp)))),
+    exp > 0 && h('div', { class: 'bar' }, parts.map(([id, v]) => h('i', { style: `width:${(v / exp) * 100}%;background:${colorOf(id)}` }))),
+    exp > 0 && h('div', { class: 'legend' }, parts.slice(0, 6).map(([id, v]) =>
+      h('span', { style: `--c:${colorOf(id)}` }, `${S.cats.get(id)?.name || '未分類'} ${Math.round((v / exp) * 100)}%`))));
+  const toggle = h('div', { class: 'seg toggle', role: 'tablist' },
+    [['list', 'list', 'リスト'], ['cal', 'calendar', 'カレンダー']].map(([v, ic, l]) =>
+      h('button', { class: view === v ? 'on' : '', 'data-view': v, onclick: () => { LS.set('md:view', v); render(); } }, icon(ic, 16), l)));
+
+  let main;
+  if (txs == null) main = h('div', { class: 'empty' }, '読み込み中…');
+  else if (view === 'cal') main = calendarCard(txs);
+  else if (!txs.length) main = h('div', { class: 'empty' }, 'この月の記録はありません', h('br'), '右下の ＋ から追加できます');
+  else main = dayGroups(txs);
+
+  const monthIn = h('input', { type: 'month', value: S.month, tabindex: '-1', 'aria-label': '月を選択',
+    onchange: (e) => e.target.value && go(`#/month/${e.target.value}`) });
+  const monthBtn = h('button', { class: 'month-btn', onclick: () => { try { monthIn.showPicker(); } catch { monthIn.focus(); monthIn.click(); } } },
+    `${S.month.slice(0, 4)}年${+S.month.slice(5)}月`, icon('chevron-down', 16), monthIn);
+  shell(monthBtn, h('div', {}, summary, toggle, main), {
+    left: h('button', { class: 'icon-btn', onclick: () => go(`#/month/${shiftMonth(S.month, -1)}`), 'aria-label': '前の月' }, icon('chevron-left', 22)),
+    right: h('button', { class: 'icon-btn', onclick: () => go(`#/month/${shiftMonth(S.month, 1)}`), 'aria-label': '次の月' }, icon('chevron-right', 22)),
   });
-  shell(null, body, {
-    left: h('button', { class: 'icon-btn', onclick: () => go(`#/month/${shiftMonth(S.month, -1)}`), 'aria-label': '前の月' }, '‹'),
-    right: h('button', { class: 'icon-btn', onclick: () => go(`#/month/${shiftMonth(S.month, 1)}`), 'aria-label': '次の月' }, '›'),
-  });
-  $app.querySelector('.top h1').replaceChildren(monthIn);
 
   if (S.hl && txs) { // 検索からのジャンプ: 該当行へスクロールして強調
     const row = $app.querySelector(`[data-id="${S.hl}"]`);
@@ -318,11 +345,36 @@ function dayGroups(txs) {
     if (t.date !== cur) {
       cur = t.date;
       const n = net.get(cur);
-      card.append(h('div', { class: 'day' }, h('span', {}, dayLabel(cur)), h('span', {}, (n < 0 ? '-' : '') + yen(Math.abs(n)))));
+      card.append(h('div', { class: 'day' }, h('span', {}, dayLabel(cur)), h('span', { class: 'num' }, (n < 0 ? '-' : '+') + yen(Math.abs(n)))));
     }
     card.append(txRow(t));
   }
   return card;
+}
+
+/** カレンダー: 日ごとの収支を表示し、日付をタップするとその日の記録を下に出す */
+function calendarCard(txs) {
+  const totals = dayTotals(txs);
+  const today = todayStr();
+  const cal = h('div', { class: 'cal' },
+    h('div', { class: 'cal-wd' }, WD.map((w) => h('span', {}, w))),
+    monthGrid(S.month).map((week) => h('div', { class: 'cal-week' }, week.map((date, i) => {
+      if (!date) return h('div', { class: 'cal-cell' });
+      const t = totals.get(date);
+      return h('button', {
+        class: `cal-cell${date === today ? ' today' : ''}${date === S.selDay ? ' sel' : ''}${i === 0 ? ' sun' : ''}${i === 6 ? ' sat' : ''}`,
+        'data-date': date, 'aria-label': dayLabel(date), onclick: () => { S.selDay = date; render(); },
+      }, h('span', { class: 'd' }, String(+date.slice(8))),
+        t?.expense ? h('span', { class: 'a e num' }, compactYen(t.expense)) : null,
+        t?.income ? h('span', { class: 'a n num' }, compactYen(t.income)) : null);
+    }))));
+  const day = txs.filter((t) => t.date === S.selDay);
+  const net = day.reduce((s, t) => s + (t.type === 'income' ? t.amount : -t.amount), 0);
+  return h('div', { class: 'card' }, cal,
+    h('div', { class: 'day-panel-head' },
+      h('div', {}, h('b', {}, dayLabel(S.selDay)), day.length ? h('small', { class: 'num' }, (net < 0 ? '-' : '+') + yen(Math.abs(net))) : null),
+      h('button', { class: 'btn sm', onclick: () => openSheet({ date: S.selDay }) }, icon('plus', 15), '追加')),
+    day.length ? day.map((t) => txRow(t)) : h('div', { class: 'empty', style: 'padding:20px 16px 24px' }, 'この日の記録はありません'));
 }
 
 // ---------- search (端末内の全件を検索) ----------
@@ -348,12 +400,12 @@ function renderSearch() {
   const catSel = h('select', { onchange: (e) => { searchState.category = e.target.value; run(true); } },
     h('option', { value: '' }, 'すべてのカテゴリ'),
     ['expense', 'income'].flatMap((type) => flatCats(type, searchState.category).map(({ c, depth }) =>
-      h('option', { value: c.id, selected: c.id === searchState.category }, `${type === 'income' ? '【収入】' : ''}${'　'.repeat(depth)}${c.name}`))));
+      h('option', { value: c.id, selected: c.id === searchState.category }, `${type === 'income' ? '収入 / ' : ''}${'　'.repeat(depth)}${c.name}`))));
   const typeSel = h('select', { onchange: (e) => { searchState.type = e.target.value; run(true); } },
     [['', '収入+支出'], ['expense', '支出のみ'], ['income', '収入のみ']].map(([v, l]) => h('option', { value: v, selected: v === searchState.type }, l)));
 
   const body = h('div', {},
-    input('q', { class: 'search-in', type: 'search', placeholder: 'メモ・カテゴリ・金額で検索' }),
+    h('div', { class: 'search-wrap' }, icon('search', 18), input('q', { class: 'search-in', type: 'search', placeholder: 'メモ・カテゴリ・金額で検索' })),
     h('div', { class: 'filters' }, typeSel, catSel,
       input('min', { type: 'number', inputmode: 'numeric', placeholder: '金額 下限' }), input('max', { type: 'number', inputmode: 'numeric', placeholder: '金額 上限' }),
       input('from', { type: 'date', 'aria-label': '開始日' }), input('to', { type: 'date', 'aria-label': '終了日' })),
@@ -371,25 +423,25 @@ function renderRecurring() {
       ? h('div', { class: 'card' }, list.map((r) => {
         const c = S.cats.get(r.categoryId);
         return h('button', { class: 'row', onclick: () => openSheet({ rec: r }) },
-          h('div', { class: 'ic', style: `--c:${c?.color || '#8e8e93'}` }, c?.icon || '🏷️'),
+          catChip(c),
           h('div', { class: 'mid' }, h('div', { class: 't' }, r.memo || catName(r.categoryId)),
             h('div', { class: 's' }, `${freqLabel(r)} ・ ${r.startDate.replaceAll('-', '/')}〜${r.endDate ? r.endDate.replaceAll('-', '/') : ''}${r.active ? '' : ' (停止中)'}`)),
-          h('div', { class: 'amt ' + (r.type === 'expense' ? 'exp' : 'inc') }, yen(r.amount)));
+          h('div', { class: 'amt num ' + (r.type === 'income' ? 'inc' : '') }, yen(r.amount)));
       }))
       : h('div', { class: 'empty' }, '繰り返しの収入・支出はまだありません', h('br'), '家賃・給与・サブスクなどを登録すると自動で記録されます'),
-    h('div', { class: 'pad' }, h('button', { class: 'btn', onclick: () => openSheet({ rec: {} }) }, '＋ 繰り返しを追加')));
+    h('div', { class: 'pad' }, h('button', { class: 'btn', onclick: () => openSheet({ rec: {} }) }, '繰り返しを追加')));
   shell('繰り返し', body, { fab: false });
 }
 
 // ---------- add / edit sheet (取引 / 繰り返し 共用) ----------
-function openSheet({ tx = null, rec = null }) {
+function openSheet({ tx = null, rec = null, date: defDate = null }) {
   const isRec = !!rec;
   const src = tx || rec || {};
   const isNew = !src.id;
   const st = { type: src.type || 'expense', categoryId: src.categoryId ?? null, freq: isRec ? src.freq || 'monthly' : '', every: src.every || 1, active: src.active !== false };
   const amount = h('input', { class: 'amount-in', type: 'text', inputmode: 'numeric', placeholder: '0', value: src.amount ? String(src.amount) : '',
     oninput: (e) => { e.target.value = e.target.value.replace(/[^\d]/g, ''); } });
-  const date = h('input', { type: 'date', value: (isRec ? src.startDate : src.date) || todayStr() });
+  const date = h('input', { type: 'date', value: (isRec ? src.startDate : src.date) || defDate || todayStr() });
   const endDate = h('input', { type: 'date', value: src.endDate || '' });
   const memo = h('input', { type: 'text', maxlength: 200, placeholder: '例: ランチ', value: src.memo || '' });
   const err = h('div', { class: 'err' });
@@ -408,8 +460,8 @@ function openSheet({ tx = null, rec = null }) {
   function drawCats() {
     catBox.replaceChildren(...flatCats(st.type, st.categoryId).map(({ c, depth }) =>
       h('button', { type: 'button', class: st.categoryId === c.id ? 'on' : '', onclick: () => { st.categoryId = c.id; drawCats(); } },
-        h('span', {}, c.icon), (depth ? '└ ' : '') + c.name)),
-      h('button', { type: 'button', onclick: () => { close(); go('#/categories'); } }, h('span', {}, '➕'), '編集'));
+        catChip(c, 18), (depth ? '└ ' : '') + c.name)),
+      h('button', { type: 'button', onclick: () => { close(); go('#/categories'); } }, h('div', { class: 'ic' }, icon('pencil', 18)), '編集'));
   }
   function drawRepeat() {
     repeatBox.replaceChildren(st.freq && h('div', {},
@@ -436,6 +488,7 @@ function openSheet({ tx = null, rec = null }) {
         .then(() => D.materialize(S.bookId, S.recs)), '保存しました');
     } else {
       body.date = date.value;
+      S.selDay = date.value;
       fire(D.saveTx(S.bookId, isNew ? null : src.id, body), null);
       const m = date.value.slice(0, 7);
       const onMonth = (route().parts[0] || 'month') === 'month';
@@ -453,7 +506,7 @@ function openSheet({ tx = null, rec = null }) {
   bg.append(h('div', { class: 'sheet form' },
     h('h2', {}, isRec ? (isNew ? '繰り返しを追加' : '繰り返しを編集') : isNew ? '記録を追加' : '記録を編集'),
     h('div', { style: 'margin-top:10px' }, seg),
-    h('label', {}, '金額'), amount,
+    h('label', {}, '金額'), h('div', { class: 'amount-wrap' }, amount),
     h('label', {}, isRec ? '開始日' : '日付'), date,
     h('label', {}, 'カテゴリ'), catBox,
     h('label', {}, 'メモ'), memo,
@@ -477,38 +530,41 @@ function renderCategories() {
       [['expense', '支出'], ['income', '収入']].map(([v, l]) => h('button', { class: `${catTab === v ? 'on' : ''} ${v}`, onclick: () => { catTab = v; renderCategories(); } }, l)))),
     h('div', { class: 'card' }, items.map(({ c, depth }) =>
       h('button', { class: 'row', style: `padding-left:${16 + depth * 24}px`, onclick: () => openCategory(c) },
-        h('div', { class: 'ic', style: `--c:${c.color}` }, c.icon), h('div', { class: 'mid' }, h('div', { class: 't' }, c.name)), h('span', { class: 'muted' }, '›')))),
+        catChip(c), h('div', { class: 'mid' }, h('div', { class: 't' }, c.name)), chev()))),
     archived.length > 0 && h('div', { class: 'sectitle' }, `非表示 (${archived.length})`),
     archived.length > 0 && h('div', { class: 'card' }, archived.map((c) =>
-      h('button', { class: 'row', onclick: () => openCategory(c) }, h('div', { class: 'ic', style: `--c:${c.color}` }, c.icon), h('div', { class: 'mid muted' }, c.name)))),
-    h('div', { class: 'pad' }, h('button', { class: 'btn', onclick: () => openCategory(null) }, '＋ カテゴリを追加'),
+      h('button', { class: 'row', onclick: () => openCategory(c) }, catChip(c), h('div', { class: 'mid muted' }, c.name)))),
+    h('div', { class: 'pad' }, h('button', { class: 'btn', onclick: () => openCategory(null) }, 'カテゴリを追加'),
       h('p', { class: 'muted' }, 'カテゴリは数に制限なく追加でき、親子関係 (サブカテゴリ) も作れます。')));
   shell('カテゴリ編集', body, {
-    fab: false, left: h('button', { class: 'icon-btn', onclick: () => go('#/settings'), 'aria-label': '戻る' }, '‹'),
+    fab: false, left: h('button', { class: 'icon-btn', onclick: () => go('#/settings'), 'aria-label': '戻る' }, icon('chevron-left', 22)),
   });
 }
 
-const EMOJIS = '🍚 🍜 🍞 ☕ 🍺 🛒 🧴 🚃 🚗 ⛽ 🏠 💡 🚿 📱 💻 🎮 🎬 🎵 👕 💄 ✂️ 🏥 💊 📚 🎓 🎁 ✈️ 🏨 🐶 👶 💴 💼 🎉 📈 🏦 🧾 🏷️'.split(' ');
-const COLORS = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#16a085', '#5ac8fa', '#007aff', '#5856d6', '#af52de', '#ff2d55', '#a2845e', '#8e8e93'];
+const COLORS = ['#e5484d', '#e8890c', '#d4a017', '#3aa76d', '#0ea5a0', '#2d9cdb', '#3b6cf6', '#8b5cf6', '#d6409f', '#f2603a', '#92704f', '#8a8b91'];
 
 function openCategory(cat) {
   const isNew = !cat;
   const type = cat?.type || catTab;
-  const st = { icon: cat?.icon || '🏷️', color: cat?.color || COLORS[Math.floor(Math.random() * COLORS.length)], parent: cat?.parentId ?? '' };
+  const st = { icon: cat?.icon || 'tag', color: cat?.color || COLORS[Math.floor(Math.random() * COLORS.length)], parent: cat?.parentId ?? '' };
   const name = h('input', { type: 'text', maxlength: 40, value: cat?.name || '', placeholder: 'カテゴリ名' });
-  const iconIn = h('input', { type: 'text', maxlength: 8, value: st.icon, oninput: (e) => { st.icon = e.target.value; } });
   const err = h('div', { class: 'err' });
   const banned = new Set(); // 自分と子孫は親に選べない
   if (cat) { const stack = [cat.id]; while (stack.length) { const id = stack.pop(); banned.add(id); (S.kids.get(id) || []).forEach((k) => stack.push(k.id)); } }
   const parentSel = h('select', { onchange: (e) => { st.parent = e.target.value; } },
     h('option', { value: '' }, '(なし: 大カテゴリ)'),
     flatCats(type, st.parent || null).filter(({ c }) => !banned.has(c.id))
-      .map(({ c, depth }) => h('option', { value: c.id, selected: c.id === st.parent }, '　'.repeat(depth) + c.icon + ' ' + c.name)));
-  const emojiRow = h('div', { style: 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px' },
-    EMOJIS.map((e) => h('button', { type: 'button', style: 'font-size:22px;padding:2px 4px', onclick: () => { st.icon = e; iconIn.value = e; } }, e)));
-  const colorIn = h('input', { type: 'color', value: st.color, style: 'height:40px;padding:2px', oninput: (e) => { st.color = e.target.value; } });
-  const swatches = h('div', { style: 'display:flex;gap:6px;margin-top:6px;flex-wrap:wrap' },
-    COLORS.map((c) => h('button', { type: 'button', 'aria-label': c, style: `width:26px;height:26px;border-radius:50%;background:${c}`, onclick: () => { st.color = c; colorIn.value = c; } })));
+      .map(({ c, depth }) => h('option', { value: c.id, selected: c.id === st.parent }, '　'.repeat(depth) + c.name)));
+  const iconBox = h('div', { class: 'icons' });
+  const swatches = h('div', { class: 'swatches' });
+  const drawPickers = () => {
+    const keys = CATEGORY_ICONS.includes(st.icon) ? CATEGORY_ICONS : [st.icon, ...CATEGORY_ICONS]; // 旧データの絵文字も選択状態で残す
+    iconBox.replaceChildren(...keys.map((k) => h('button', { type: 'button', 'aria-label': k, class: st.icon === k ? 'on' : '',
+      style: `color:${st.color}`, onclick: () => { st.icon = k; drawPickers(); } }, icon(k, 22))));
+    swatches.replaceChildren(...COLORS.map((c) => h('button', { type: 'button', 'aria-label': c, class: st.color === c ? 'on' : '',
+      style: `background:${c}`, onclick: () => { st.color = c; drawPickers(); } })));
+  };
+  drawPickers();
 
   const bg = h('div', { class: 'sheet-bg', onclick: (e) => e.target === bg && close() });
   const close = () => bg.remove();
@@ -516,7 +572,7 @@ function openCategory(cat) {
     if (!name.value.trim()) return (err.textContent = 'カテゴリ名を入力してください');
     const sibs = [...S.cats.values()].filter((c) => c.type === type);
     const body = {
-      type, name: name.value.trim(), icon: (st.icon || '🏷️').trim(), color: st.color, parentId: st.parent || null,
+      type, name: name.value.trim(), icon: st.icon || 'tag', color: st.color, parentId: st.parent || null,
       sort: cat?.sort ?? sibs.reduce((m, c) => Math.max(m, c.sort), -1) + 1, archived: !!cat?.archived, ...extra,
     };
     fire(D.saveCategory(S.bookId, cat?.id ?? null, body));
@@ -543,8 +599,8 @@ function openCategory(cat) {
     h('h2', {}, isNew ? `${type === 'expense' ? '支出' : '収入'}カテゴリを追加` : 'カテゴリを編集'),
     h('label', {}, '名前'), name,
     h('label', {}, '親カテゴリ'), parentSel,
-    h('label', {}, 'アイコン'), iconIn, emojiRow,
-    h('label', {}, '色'), colorIn, swatches, err,
+    h('label', {}, 'アイコン'), iconBox,
+    h('label', {}, '色'), swatches, err,
     h('button', { class: 'btn', onclick: () => save() }, '保存'),
     !isNew && h('div', { style: 'display:flex;gap:8px' },
       h('button', { class: 'btn ghost', onclick: () => move(-1) }, '↑ 上へ'), h('button', { class: 'btn ghost', onclick: () => move(1) }, '↓ 下へ')),
@@ -570,7 +626,7 @@ function renderSettings() {
         h('div', { class: 'muted', style: 'word-break:break-all;margin:6px 0' }, link),
         h('button', { class: 'btn sm', onclick: async () => {
           try { if (navigator.share) await navigator.share({ title: 'マネーダイアリー', text: `家計簿に参加: ${link}` }); else { await navigator.clipboard.writeText(link); toast('リンクをコピーしました'); } } catch {}
-        } }, '共有する')));
+        } }, icon('share', 15), '共有する')));
     } catch (e) { toast(D.friendly(e)); }
   }
   async function removeMember(m) {
@@ -592,24 +648,24 @@ function renderSettings() {
     h('div', { class: 'pad' }, h('button', { class: 'btn ghost sm', onclick: async () => {
       const n = prompt('新しい家計簿の名前')?.trim(); if (!n) return;
       try { const id = await D.createBook(n); S.books = await D.listBooks(); openBook(id, todayStr().slice(0, 7)); go('#/month'); } catch (e) { toast(D.friendly(e)); }
-    } }, '＋ 家計簿を作成')),
+    } }, icon('plus', 15), '家計簿を作成')),
     h('div', { class: 'sectitle' }, `共有メンバー — ${book?.name || ''}`),
     h('div', { class: 'card' }, [...S.members.values()].map((m) => h('div', { class: 'row' },
       h('div', { class: 'mid' }, m.name + (m.id === S.me.id ? ' (自分)' : '')), h('span', { class: 'chip' }, m.role === 'owner' ? 'オーナー' : 'メンバー'),
       m.role !== 'owner' && (isOwner || m.id === S.me.id) && h('button', { class: 'btn sm danger', onclick: () => removeMember(m) }, m.id === S.me.id ? '退出' : '削除')))),
-    h('div', { class: 'card' }, h('div', { class: 'pad' }, h('button', { class: 'btn sm', onclick: invite }, '家族・パートナーを招待')), inviteBox),
+    h('div', { class: 'card' }, h('div', { class: 'pad' }, h('button', { class: 'btn sm', onclick: invite }, icon('users', 15), '家族・パートナーを招待')), inviteBox),
     h('div', { class: 'sectitle' }, '招待コードで参加'),
     h('div', { class: 'card form' }, h('div', { class: 'pad' }, joinIn, h('button', { class: 'btn sm', style: 'margin-top:10px', onclick: () => {
       const c = joinIn.value.trim(); if (c) joinWith(c.replace(/^.*\/join\//, ''));
     } }, '参加する'))),
     h('div', { class: 'sectitle' }, '管理'),
     h('div', { class: 'card' },
-      h('button', { class: 'row', onclick: () => go('#/categories') }, h('div', { class: 'mid' }, '🏷️ カテゴリ編集'), h('span', { class: 'muted' }, '›')),
-      isOwner && h('button', { class: 'row', onclick: async () => {
+      h('button', { class: 'row plain', onclick: () => go('#/categories') }, h('div', { class: 'ic' }, icon('tag', 20)), h('div', { class: 'mid' }, 'カテゴリ編集'), chev()),
+      isOwner && h('button', { class: 'row plain', onclick: async () => {
         const n = prompt('家計簿の名前', book?.name)?.trim(); if (!n) return;
         try { await D.renameBook(S.bookId, n); await reloadBooks(); } catch (e) { toast(D.friendly(e)); }
-      } }, h('div', { class: 'mid' }, '✏️ 家計簿名を変更'), h('span', { class: 'muted' }, '›'))),
-    h('div', { class: 'pad' }, h('button', { class: 'btn danger', onclick: logout }, 'ログアウト')));
+      } }, h('div', { class: 'ic' }, icon('pencil', 20)), h('div', { class: 'mid' }, '家計簿名を変更'), chev())),
+    h('div', { class: 'pad' }, h('button', { class: 'btn danger', onclick: logout }, icon('logout', 18), 'ログアウト')));
   shell('設定', body, { fab: false });
 }
 
@@ -646,7 +702,7 @@ function renderAuth(mode = 'login') {
     } catch (x) { S.registering = false; err.textContent = D ? D.friendly(x) : x.message; btn.disabled = false; }
   }
   $app.replaceChildren(h('div', { class: 'auth' },
-    h('div', { style: 'font-size:56px' }, '💰'), h('h1', {}, 'マネーダイアリー'),
+    mark(), h('h1', {}, 'マネーダイアリー'), h('p', {}, '家族と共有できる家計簿'),
     h('form', { class: 'card pad form', onsubmit: submit },
       h('div', { class: 'seg' }, [['login', 'ログイン'], ['register', '新規登録']].map(([m, l]) =>
         h('button', { type: 'button', class: mode === m ? 'on' : '', onclick: () => renderAuth(m) }, l))),

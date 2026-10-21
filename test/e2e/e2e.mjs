@@ -84,7 +84,8 @@ await a.click('a:has-text("設定")');
 await a.click('text=カテゴリ編集');
 await a.click('text=カテゴリを追加');
 await a.fill('input[placeholder=カテゴリ名]', 'ペットフード');
-await a.selectOption('.sheet select', { label: '🍚 食費' });
+await a.selectOption('.sheet select', { label: '食費' });
+await a.screenshot({ path: `${SHOTS}/fb-category-edit.png` });
 await a.click('.sheet .btn:has-text("保存")');
 await a.waitForSelector('.row:has-text("ペットフード")');
 step('サブカテゴリを追加');
@@ -141,6 +142,36 @@ await a.evaluate((m) => { location.hash = `#/month/${m}`; }, thisMonth);
 await a.waitForSelector('.row:has-text("花子のおやつ")', { timeout: 15000 });
 assert.match(await a.textContent('.row:has-text("花子のおやつ")'), /はなこ/);
 step('相手の追加がリアルタイムに反映 (誰の記録か表示)');
+
+// ===== カレンダービュー =====
+await a.click('button[data-view=cal]');
+await a.waitForSelector('.cal-cell.today');
+assert.match(await a.textContent('.cal-cell.today .a.e'), /1,580/);
+assert.equal(await a.locator('.cal-cell.today.sel').count(), 1); // 今日が選択済み
+assert.equal(await a.locator('.day-panel-head ~ .row:has-text("ランチ 寿司")').count(), 1);
+await a.screenshot({ path: `${SHOTS}/fb-calendar.png` });
+// 別の日を選ぶと記録なし → その日付で追加できる
+const otherDay = `${thisMonth}-01`;
+if (!(await a.locator('.cal-cell.today[data-date$="-01"]').count())) {
+  await a.click(`.cal-cell[data-date="${otherDay}"]`);
+  await a.waitForSelector('.cal-cell.sel[data-date="' + otherDay + '"]');
+  assert.equal(await a.locator('text=この日の記録はありません').count(), 1);
+  await a.click('.day-panel-head .btn');
+  assert.equal(await a.inputValue('.sheet input[type=date]'), otherDay);
+  await a.click('.sheet .btn:has-text("キャンセル")');
+}
+// 前回の表示形式を覚えている + 検索ジャンプはカレンダーでもその日を選んで強調
+await a.click('a:has-text("検索")');
+await a.fill('.search-in', 'ランチ');
+await a.click('.row:has-text("ランチ 寿司")');
+await a.waitForSelector('.row.flash');
+assert.equal(await a.locator('.cal-cell.today.sel').count(), 1);
+step('カレンダー: 日別の収支 / 日付選択 / その日に追加 / 検索ジャンプ');
+await a.click('button[data-view=list]');
+await a.waitForSelector('.day');
+await a.emulateMedia({ colorScheme: 'dark' });
+await a.screenshot({ path: `${SHOTS}/fb-list-dark.png` });
+await a.emulateMedia({ colorScheme: 'light' });
 
 // 花子はオーナーではないのでメンバー削除/家計簿名変更は出ない
 assert.equal(await b.locator('text=家計簿名を変更').count(), 0);

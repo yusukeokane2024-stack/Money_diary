@@ -13,14 +13,15 @@ import {
 import { firebaseConfig } from './firebase-config.js';
 import { dueOccurrences, firstFutureN, today } from './lib/recurring.js';
 
+// icon は src/lib/icons.js のキー
 const DEFAULT_CATEGORIES = {
   expense: [
-    ['食費', '🍚', '#ff9500'], ['日用品', '🧴', '#34c759'], ['交通費', '🚃', '#5ac8fa'],
-    ['住居', '🏠', '#af52de'], ['水道光熱費', '💡', '#ffcc00'], ['通信費', '📱', '#007aff'],
-    ['趣味・娯楽', '🎮', '#ff2d55'], ['衣服・美容', '👕', '#ff6482'], ['健康・医療', '🏥', '#30b0c7'],
-    ['教育・教養', '📚', '#a2845e'], ['特別な支出', '🎁', '#ff3b30'], ['その他', '🏷️', '#8e8e93'],
+    ['食費', 'utensils', '#e8890c'], ['日用品', 'bag', '#3aa76d'], ['交通費', 'bus', '#2d9cdb'],
+    ['住居', 'home', '#8b5cf6'], ['水道光熱費', 'zap', '#d4a017'], ['通信費', 'phone', '#3b6cf6'],
+    ['趣味・娯楽', 'gamepad', '#e5484d'], ['衣服・美容', 'shirt', '#d6409f'], ['健康・医療', 'heart', '#0ea5a0'],
+    ['教育・教養', 'book', '#92704f'], ['特別な支出', 'gift', '#f2603a'], ['その他', 'tag', '#8a8b91'],
   ],
-  income: [['給与', '💴', '#34c759'], ['賞与', '🎉', '#ffcc00'], ['副収入', '💼', '#5ac8fa'], ['その他', '🏷️', '#8e8e93']],
+  income: [['給与', 'banknote', '#3aa76d'], ['賞与', 'star', '#d4a017'], ['副収入', 'briefcase', '#2d9cdb'], ['その他', 'tag', '#8a8b91']],
 };
 const INVITE_MS = 7 * 24 * 3600 * 1000;
 
@@ -167,7 +168,7 @@ export const deleteTx = (bookId, id) => deleteDoc(doc(col(bookId, 'transactions'
 
 // ---------- カテゴリ (無制限・階層) ----------
 export function saveCategory(bookId, id, c) {
-  const fields = { name: c.name, type: c.type, icon: c.icon || '🏷️', color: c.color, parentId: c.parentId ?? null, sort: c.sort ?? 0, archived: !!c.archived };
+  const fields = { name: c.name, type: c.type, icon: c.icon || 'tag', color: c.color, parentId: c.parentId ?? null, sort: c.sort ?? 0, archived: !!c.archived };
   return id ? setDoc(doc(col(bookId, 'categories'), id), fields) : setDoc(doc(col(bookId, 'categories')), fields);
 }
 export function reorderCategories(bookId, ids) {
