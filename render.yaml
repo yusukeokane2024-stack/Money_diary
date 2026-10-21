@@ -1,0 +1,11 @@
+# Render Blueprint: 永続ディスク付きの Docker Web サービス (HTTPS は自動)
+services:
+  - type: web
+    name: money-diary
+    runtime: docker
+    plan: starter
+    healthCheckPath: /
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1

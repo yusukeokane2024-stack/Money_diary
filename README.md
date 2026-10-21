@@ -17,3 +17,11 @@ npm test
 
 ## 構成
 `server/` (http + node:sqlite) / `public/` (ES modules の SPA) / `test/`
+
+## 公開 (デプロイ)
+データは SQLite ファイルなので、**永続ディスク (`/data`) が使える**サービスを選んでください。必ず HTTPS で公開します (Cookie の Secure 属性は `X-Forwarded-Proto: https` で自動付与)。
+
+- **Render**: GitHub リポジトリを連携 → New → Blueprint で `render.yaml` を読み込み (永続ディスクは有料プランが必要)
+- **Fly.io / VPS など**: `docker build -t money-diary .` → `docker run -p 3000:3000 -v money-data:/data money-diary`
+
+環境変数: `PORT` (既定 3000) / `DB_FILE` (既定 `/data/money.db`)。バックアップは `DB_FILE` (と `-wal` ファイル) をコピーしてください。
