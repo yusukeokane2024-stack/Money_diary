@@ -621,10 +621,11 @@ function openSheet({ tx = null, rec = null, date: defDate = null }) {
   }
   function drawRepeat() {
     repeatBox.replaceChildren(st.freq && h('div', {},
-      h('label', {}, '間隔'), h('div', { style: 'display:flex;gap:8px;align-items:center' }, every, h('span', {}, FREQ[st.freq] + 'ごと')),
+      h('label', {}, '間隔'), h('div', { class: 'every-row' }, every, h('span', {}, FREQ[st.freq] + 'ごと')),
       h('label', {}, '終了日 (任意)'), endDate,
-      isRec && !isNew && h('label', { style: 'display:flex;gap:8px;align-items:center;font-size:15px;color:var(--text)' },
-        h('input', { type: 'checkbox', style: 'width:auto', checked: st.active, onchange: (e) => { st.active = e.target.checked; } }), '有効にする')));
+      isRec && !isNew && h('label', { class: 'switch-row' },
+        h('span', {}, h('b', {}, '有効にする'), h('small', {}, 'オフにすると一時停止します (記録も予定も作りません)')),
+        h('input', { type: 'checkbox', class: 'switch', role: 'switch', checked: st.active, onchange: (e) => { st.active = e.target.checked; } }))));
   }
 
   const bg = h('div', { class: 'sheet-bg', onclick: (e) => e.target === bg && close() });

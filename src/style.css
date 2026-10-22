@@ -207,3 +207,17 @@ button.cal-cell:active{background:var(--fill)}
 .row.sched .t{font-style:normal}
 .tag{display:inline-block;font-size:10.5px;font-weight:650;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--sub);background:var(--fill);margin-right:2px;line-height:1.5}
 .sched-note{padding:0 20px 14px;font-size:12px;color:var(--sub)}
+
+/* ---- 切り替えスイッチ / 間隔の行 ---- */
+.form label.switch-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:20px 0 0;padding:12px 14px;border-radius:14px;background:var(--fill);font-size:15px;color:var(--text);cursor:pointer}
+.switch-row b{display:block;font-weight:600}
+.switch-row small{display:block;color:var(--sub);font-size:12px;margin-top:2px;line-height:1.4}
+.form input.switch{appearance:none;-webkit-appearance:none;position:relative;flex:none;width:51px;height:31px;padding:0;border:0;border-radius:999px;background:#c9cacf;transition:background .2s;cursor:pointer}
+.form input.switch::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}
+.form input.switch:checked{background:#34c759}
+.form input.switch:checked::after{transform:translateX(20px)}
+.form input.switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(prefers-color-scheme:dark){.form input.switch{background:#4a4b52}.form input.switch:checked{background:#30d158}}
+.every-row{display:flex;gap:10px;align-items:center}
+.every-row input{width:96px;flex:none}
+.every-row span{white-space:nowrap;color:var(--text)}

@@ -94,6 +94,33 @@ assert.ok((await a.locator('.cal-cell .a.e').count()) >= 1);
 console.log('✓ 予定: 翌月・数か月先に表示 / 合計に含める旨を注記 / タップで編集 / 今月分は本物 / 検索に混ざらない / カレンダーにも出る');
 await a.click('button[data-view=list]');
 
+// 一時停止スイッチ: オフにすると予定が消えて一覧に(停止中)と出る / オンに戻すと予定が戻る
+const nextMonth = shiftMonth(thisMonth, 1);
+async function openRecurringA() {
+  await a.click('a:has-text("設定")');
+  await a.click('.row:has-text("繰り返しの管理")');
+  await a.waitForSelector('h1:has-text("繰り返しの管理")');
+  await a.click('.row:has-text("サブスクA")');
+  await a.waitForSelector('.sheet h2:has-text("繰り返しを編集")');
+}
+await openRecurringA();
+await a.locator('.sheet input.switch').click();
+assert.equal(await a.locator('.sheet input.switch').isChecked(), false);
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.row:has-text("サブスクA"):has-text("停止中")');
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, nextMonth);
+await a.waitForSelector('.summary');
+assert.equal(await a.locator('.row.sched:has-text("サブスクA")').count(), 0);
+await openRecurringA();
+await a.locator('.sheet input.switch').click();
+assert.equal(await a.locator('.sheet input.switch').isChecked(), true);
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.row:has-text("サブスクA")');
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, nextMonth);
+await a.waitForSelector('.row.sched:has-text("サブスクA")');
+console.log('✓ 一時停止スイッチ: オフで予定が消え「停止中」と出る / オンに戻すと予定が戻る');
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, thisMonth);
+
 // D: 明日から毎日の繰り返し → いまは0件。日付が2日進んだ状態でアプリに戻ると反映される (再読み込みなし)
 const tomorrow = addDays(today, 1);
 await addViaSheet({ amount: 700, memo: 'サブスクD', date: tomorrow, freq: 'daily' });
