@@ -2,7 +2,7 @@
 // Firebase を含む data.js は初回描画のあとで読み込む。前回のデータを localStorage から先に描画する。
 import { searchTx } from './lib/search.js';
 import { icon, CATEGORY_ICONS } from './lib/icons.js';
-import { monthGrid, compactYen, dayTotals } from './lib/calendar.js';
+import { monthGrid, compactYen, amountSize, dayTotals } from './lib/calendar.js';
 import { dueOccurrences, upcomingInMonth, today as jstToday } from './lib/recurring.js';
 import { categoryBreakdown, monthlyTrend, memberTotals, budgetStatus } from './lib/charts.js';
 
@@ -443,8 +443,8 @@ function calendarCard(txs) {
         class: `cal-cell${date === today ? ' today' : ''}${date === S.selDay ? ' sel' : ''}${i === 0 ? ' sun' : ''}${i === 6 ? ' sat' : ''}`,
         'data-date': date, 'aria-label': dayLabel(date), onclick: () => { S.selDay = date; render(); },
       }, h('span', { class: 'd' }, String(+date.slice(8))),
-        t?.expense ? h('span', { class: 'a e num' }, compactYen(t.expense)) : null,
-        t?.income ? h('span', { class: 'a n num' }, compactYen(t.income)) : null);
+        t?.expense ? h('span', { class: `a e num ${amountSize(t.expense)}` }, compactYen(t.expense)) : null,
+        t?.income ? h('span', { class: `a n num ${amountSize(t.income)}` }, compactYen(t.income)) : null);
     }))));
   const day = txs.filter((t) => t.date === S.selDay);
   const net = day.reduce((s, t) => s + (t.type === 'income' ? t.amount : -t.amount), 0);
@@ -590,7 +590,7 @@ function renderRecurring() {
 }
 
 // ---------- add / edit sheet (取引 / 繰り返し 共用) ----------
-function openSheet({ tx = null, rec = null, date: defDate = null }) {
+function openSheet({ tx = null, rec = null, date: defDate = null, copied = false }) {
   const isRec = !!rec;
   const src = tx || rec || {};
   const isNew = !src.id;
@@ -653,6 +653,13 @@ function openSheet({ tx = null, rec = null, date: defDate = null }) {
     }
     close();
   }
+  /** いま入力されている内容をベースに、新しい入力画面を開く (日付は今日 / 繰り返しは開始日を今日に) */
+  function copyIt() {
+    const base = { type: st.type, amount: Number(amount.value) || src.amount, categoryId: st.categoryId, memo: memo.value.trim() };
+    close();
+    if (isRec) openSheet({ rec: { ...base, freq: st.freq, every: Number(every.value) || 1, startDate: todayStr(), endDate: null, active: true }, copied: true });
+    else openSheet({ tx: { ...base, date: todayStr() }, copied: true });
+  }
   function del() {
     if (!confirm('削除しますか？')) return;
     fire(isRec ? D.deleteRecurring(S.bookId, src.id) : D.deleteTx(S.bookId, src.id), '削除しました');
@@ -661,7 +668,7 @@ function openSheet({ tx = null, rec = null, date: defDate = null }) {
 
   drawSeg(); drawCats(); drawRepeat();
   bg.append(h('div', { class: 'sheet form' },
-    h('h2', {}, isRec ? (isNew ? '繰り返しを追加' : '繰り返しを編集') : isNew ? '記録を追加' : '記録を編集'),
+    h('h2', {}, copied ? (isRec ? '繰り返しをコピーして追加' : '記録をコピーして追加') : isRec ? (isNew ? '繰り返しを追加' : '繰り返しを編集') : isNew ? '記録を追加' : '記録を編集'),
     h('div', { style: 'margin-top:10px' }, seg),
     h('label', {}, '金額'), h('div', { class: 'amount-wrap' }, amount),
     h('label', {}, isRec ? '開始日' : '日付'), date,
@@ -671,6 +678,7 @@ function openSheet({ tx = null, rec = null, date: defDate = null }) {
     (isNew || isRec) && freqSel,
     repeatBox, err,
     h('button', { class: 'btn', onclick: save }, '保存'),
+    !isNew && h('button', { class: 'btn ghost', onclick: copyIt }, icon('copy', 18), 'コピーして新規入力'),
     !isNew && h('button', { class: 'btn danger', onclick: del }, '削除'),
     h('button', { class: 'btn ghost', onclick: close }, 'キャンセル')));
   document.body.append(bg);

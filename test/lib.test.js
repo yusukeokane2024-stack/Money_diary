@@ -59,7 +59,7 @@ test('検索: メモ/カテゴリ(親含む)/金額/複数語/期間', () => {
   assert.deepEqual(ids({ q: '%' }), []);
 });
 
-import { monthGrid, compactYen, dayTotals } from '../src/lib/calendar.js';
+import { monthGrid, compactYen, amountSize, dayTotals } from '../src/lib/calendar.js';
 test('カレンダー: 週の並び (日曜始まり)', () => {
   const w = monthGrid('2026-02'); // 2026-02-01 は日曜 / 28日まで
   assert.equal(w.length, 4);
@@ -74,8 +74,13 @@ test('カレンダー: 週の並び (日曜始まり)', () => {
 test('カレンダー: 金額の短縮と日別合計', () => {
   assert.equal(compactYen(1280), '1,280');
   assert.equal(compactYen(99999), '99,999');
-  assert.equal(compactYen(120000), '12万');
-  assert.equal(compactYen(1234567), '123万');
+  assert.equal(compactYen(120000), '120,000');      // 「12万」のように省略せず、数字で表示する
+  assert.equal(compactYen(1234567), '1,234,567');
+  assert.equal(compactYen(999999999), '999,999,999');
+  assert.equal(amountSize(1280), '');
+  assert.equal(amountSize(123456), '');              // 7文字: そのまま
+  assert.equal(amountSize(1234567), 'sm');           // 9文字: 少し小さく
+  assert.equal(amountSize(123456789), 'xs');         // 11文字: さらに小さく
   const m = dayTotals([{ date: '2026-10-01', type: 'expense', amount: 100 }, { date: '2026-10-01', type: 'income', amount: 500 }, { date: '2026-10-01', type: 'expense', amount: 50 }]);
   assert.deepEqual(m.get('2026-10-01'), { income: 500, expense: 150, count: 3 });
 });

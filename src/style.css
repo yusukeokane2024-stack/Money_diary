@@ -221,3 +221,7 @@ button.cal-cell:active{background:var(--fill)}
 .every-row{display:flex;gap:10px;align-items:center}
 .every-row input{width:96px;flex:none}
 .every-row span{white-space:nowrap;color:var(--text)}
+
+/* カレンダーの金額: 桁が多いときは小さくして、省略せず数字で収める */
+.cal-cell .a.sm{font-size:9px;letter-spacing:-.03em}
+.cal-cell .a.xs{font-size:8px;letter-spacing:-.04em}

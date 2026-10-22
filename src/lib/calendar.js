@@ -14,10 +14,15 @@ export function monthGrid(month) {
   return weeks;
 }
 
-/** セルに収まるよう金額を短くする: 1,234 / 12万 */
+/** カレンダーのセルに出す金額: 省略せず数字で表示する (1,234 / 123,456 / 1,234,567) */
 export function compactYen(n) {
-  if (n >= 100000) return `${Math.round(n / 10000).toLocaleString('ja-JP')}万`;
   return n.toLocaleString('ja-JP');
+}
+
+/** 桁数が多いときに文字を小さくして、セルに収めるためのサイズ区分 */
+export function amountSize(n) {
+  const len = compactYen(n).length; // カンマを含む文字数
+  return len >= 10 ? 'xs' : len >= 8 ? 'sm' : '';
 }
 
 /** 日付ごとの収入・支出の合計 */
