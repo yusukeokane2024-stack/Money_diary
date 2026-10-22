@@ -127,3 +127,18 @@ test('メンバーシップ一覧(ミラー)は本人のみ', async () => {
   await assertFails(getDocs(collection(db('bob'), 'users', 'alice', 'memberships')));
   await assertSucceeds(deleteDoc(m('alice')));
 });
+
+test('予算: メンバーだけが設定でき、値は検証される', async () => {
+  await seedBook();
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'books', 'b1', 'members', 'bob'), { role: 'member', name: 'Bob' }));
+  const bud = (u) => doc(db(u), 'books', 'b1', 'meta', 'budget');
+  await assertSucceeds(setDoc(bud('bob'), { monthly: 150000 })); // オーナー以外も設定可
+  await assertSucceeds(getDoc(bud('alice')));
+  await assertFails(setDoc(bud('bob'), { monthly: 0 }));
+  await assertFails(setDoc(bud('bob'), { monthly: 1.5 }));
+  await assertFails(setDoc(bud('bob'), { monthly: 100, extra: 1 }));
+  await assertFails(setDoc(doc(db('bob'), 'books', 'b1', 'meta', 'other'), { monthly: 100 })); // budget 以外の文書は不可
+  await assertFails(setDoc(bud('eve'), { monthly: 100 })); // 非メンバー
+  await assertFails(getDoc(bud('eve')));
+  await assertSucceeds(deleteDoc(bud('bob')));
+});

@@ -147,6 +147,7 @@ export function watchBook(bookId, h) {
     onSnapshot(col(bookId, 'categories'), (s) => h.categories(s.docs.map(withId).sort((a, b) => a.sort - b.sort)), err),
     onSnapshot(col(bookId, 'members'), (s) => h.members(s.docs.map((d) => ({ id: d.id, ...d.data() }))), err),
     onSnapshot(col(bookId, 'recurrings'), (s) => h.recurrings(s.docs.map(withId)), err),
+    onSnapshot(doc(db, 'books', bookId, 'meta', 'budget'), (s) => h.budget(s.exists() ? s.data().monthly : 0), err),
   ];
   return () => subs.forEach((u) => u());
 }
@@ -156,6 +157,12 @@ export function watchMonth(bookId, month, cb, errCb) {
 }
 export function watchAll(bookId, cb, errCb) {
   return onSnapshot(col(bookId, 'transactions'), (s) => cb(sortTx(s.docs.map(txOf))), errCb);
+}
+
+// ---------- 月の予算 (家計簿ごとに1つ。0 で解除) ----------
+export function setBudget(bookId, amount) {
+  const ref = doc(db, 'books', bookId, 'meta', 'budget');
+  return amount > 0 ? setDoc(ref, { monthly: amount }) : deleteDoc(ref);
 }
 
 // ---------- 取引 ----------

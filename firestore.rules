@@ -85,6 +85,16 @@ service cloud.firestore {
         allow delete: if isMember(b);
       }
 
+      // 月の予算 (メンバーなら誰でも変更できる)
+      match /meta/{id} {
+        allow read: if isMember(b);
+        allow create, update: if isMember(b) && id == 'budget'
+          && request.resource.data.keys().hasOnly(['monthly'])
+          && request.resource.data.monthly is int
+          && request.resource.data.monthly >= 1 && request.resource.data.monthly <= 999999999;
+        allow delete: if isMember(b) && id == 'budget';
+      }
+
       match /recurrings/{id} {
         allow read: if isMember(b);
         allow create, update: if isMember(b)

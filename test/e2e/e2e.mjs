@@ -69,7 +69,9 @@ await a.click('.sheet .btn:has-text("キャンセル")');
 step('金額未入力はエラー表示');
 
 // 繰り返し (毎月31日の家賃)
-await a.click('a:has-text("繰り返し")');
+assert.equal(await a.locator('.tabs a:has-text("繰り返し")').count(), 0); // 繰り返しタブは廃止
+await a.click('a:has-text("設定")');
+await a.click('.row:has-text("繰り返しの管理")');
 await a.click('text=繰り返しを追加');
 await a.fill('.amount-in', '80000');
 await a.fill('.sheet input[type=date]', '2026-07-31');
@@ -172,6 +174,38 @@ await a.waitForSelector('.day');
 await a.emulateMedia({ colorScheme: 'dark' });
 await a.screenshot({ path: `${SHOTS}/fb-list-dark.png` });
 await a.emulateMedia({ colorScheme: 'light' });
+
+// ===== 予算 =====
+await a.click('a:has-text("家計簿")');
+await a.waitForSelector('.budget-set');
+await a.click('.budget-set');
+await a.fill('.sheet .amount-in', '50000');
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.budget');
+assert.match(await a.textContent('.budget'), /¥48,420/); // 50,000 - 1,580
+await b.waitForSelector('.budget:has-text("¥48,420")', { timeout: 15000 }); // 相手の画面にも反映
+await a.screenshot({ path: `${SHOTS}/fb-home.png` });
+step('月の予算: 残りをゲージ表示 / 相手にも反映');
+
+// ===== グラフ =====
+await a.click('a:has-text("グラフ")');
+await a.waitForSelector('svg.donut');
+assert.match(await a.textContent('.donut-center'), /¥1,580/);
+assert.match(await a.textContent('.g-list'), /食費/);
+assert.match(await a.textContent('.g-list'), /未分類/);
+await a.waitForSelector('svg.trend .tr-g.cur');
+assert.match(await a.textContent('svg.trend .tr-g.cur'), new RegExp(`${+thisMonth.slice(5)}月`));
+assert.equal(await a.locator('svg.trend .tr-g').count(), 6);
+assert.match(await a.textContent('.card:has-text("メンバー別")'), /たろう[\s\S]*¥1,280[\s\S]*はなこ[\s\S]*¥300/);
+await a.screenshot({ path: `${SHOTS}/fb-graph.png` });
+await a.click('button[data-type=income]');
+await a.waitForSelector('text=この月の収入はありません');
+await a.click('button[data-type=expense]');
+await a.click('button[aria-label="前の月"]'); // グラフのまま前の月へ
+await a.waitForFunction(() => location.hash.startsWith('#/graph/'));
+step('グラフ: カテゴリ別ドーナツ / 6か月推移 / メンバー別 / 月移動');
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, thisMonth);
+await a.waitForSelector('.summary');
 
 // 花子はオーナーではないのでメンバー削除/家計簿名変更は出ない
 assert.equal(await b.locator('text=家計簿名を変更').count(), 0);

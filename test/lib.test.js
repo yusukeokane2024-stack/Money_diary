@@ -79,3 +79,39 @@ test('カレンダー: 金額の短縮と日別合計', () => {
   const m = dayTotals([{ date: '2026-10-01', type: 'expense', amount: 100 }, { date: '2026-10-01', type: 'income', amount: 500 }, { date: '2026-10-01', type: 'expense', amount: 50 }]);
   assert.deepEqual(m.get('2026-10-01'), { income: 500, expense: 150, count: 3 });
 });
+
+import { categoryBreakdown, monthlyTrend, memberTotals, budgetStatus } from '../src/lib/charts.js';
+const ccats = new Map([
+  [1, { id: 1, name: '食費', color: '#e8890c', icon: 'utensils', parentId: null }],
+  [2, { id: 2, name: '外食', color: '#aaaaaa', icon: 'coffee', parentId: 1 }],
+  [3, { id: 3, name: '交通費', color: '#2d9cdb', icon: 'bus', parentId: null }],
+]);
+const ctx = [
+  { type: 'expense', amount: 3000, categoryId: 2, date: '2026-10-03', userId: 'a' },
+  { type: 'expense', amount: 1000, categoryId: 1, date: '2026-10-04', userId: 'b' },
+  { type: 'expense', amount: 1000, categoryId: 3, date: '2026-10-05', userId: 'a' },
+  { type: 'expense', amount: 500, categoryId: null, date: '2026-09-05', userId: 'a' },
+  { type: 'income', amount: 200000, categoryId: null, date: '2026-10-25', userId: 'a' },
+];
+test('グラフ: カテゴリ別は大カテゴリにまとめて内訳を持つ', () => {
+  const r = categoryBreakdown(ctx, ccats, 'expense');
+  assert.equal(r.total, 5500);
+  assert.deepEqual(r.items.map((i) => [i.name, i.total]), [['食費', 4000], ['交通費', 1000], ['未分類', 500]]);
+  assert.deepEqual(r.items[0].children.map((c) => [c.name, c.total]), [['外食', 3000], ['食費', 1000]]);
+  assert.ok(Math.abs(r.items.reduce((s, i) => s + i.share, 0) - 1) < 1e-9);
+  assert.equal(categoryBreakdown([], ccats, 'expense').items.length, 0);
+});
+test('グラフ: 月別推移は年をまたいで直近6か月', () => {
+  const t = monthlyTrend(ctx, '2026-10', 6);
+  assert.deepEqual(t.map((m) => m.month), ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
+  assert.equal(t[4].expense, 500);
+  assert.deepEqual([t[5].expense, t[5].income], [5000, 200000]);
+  assert.equal(monthlyTrend([], '2026-02', 3)[0].month, '2025-12');
+});
+test('グラフ: メンバー別と予算ゲージ', () => {
+  const m = memberTotals(ctx, 'expense');
+  assert.deepEqual(m.items.map((x) => [x.id, x.total]), [['a', 4500], ['b', 1000]]);
+  assert.equal(budgetStatus(0, 100), null);
+  assert.deepEqual(budgetStatus(10000, 4000), { remaining: 6000, ratio: 0.4, over: false });
+  assert.equal(budgetStatus(10000, 12000).over, true);
+});
