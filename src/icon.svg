@@ -1,1 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#16171a"/><g fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"><path d="M158 118l98 146 98-146"/><path d="M256 264v138"/><path d="M186 306h140"/><path d="M186 358h140"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e6ebf3"/></linearGradient>
+<radialGradient id="glow" cx="0.3" cy="0.18" r="0.8"><stop offset="0" stop-color="#ffffff" stop-opacity=".9"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+<linearGradient id="coin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3d46"/><stop offset="1" stop-color="#111216"/></linearGradient>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".55"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+<filter id="drop" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="11" flood-color="#1b2a45" flood-opacity=".28"/></filter>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#000" flood-opacity=".4"/></filter>
+<linearGradient id="s0" gradientUnits="userSpaceOnUse" x1="368.7" y1="142.5" x2="351.6" y2="247.3"><stop offset="0" stop-color="#ffb35c"/><stop offset="1" stop-color="#e8730c"/></linearGradient><linearGradient id="s1" gradientUnits="userSpaceOnUse" x1="315.4" y1="404.6" x2="226.0" y2="347.2"><stop offset="0" stop-color="#6fd0f5"/><stop offset="1" stop-color="#1f8fd6"/></linearGradient><linearGradient id="s2" gradientUnits="userSpaceOnUse" x1="116.1" y1="333.6" x2="161.8" y2="237.7"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f0b400"/></linearGradient><linearGradient id="s3" gradientUnits="userSpaceOnUse" x1="111.0" y1="188.4" x2="215.4" y2="169.0"><stop offset="0" stop-color="#ff8f9a"/><stop offset="1" stop-color="#e0364f"/></linearGradient><linearGradient id="s4" gradientUnits="userSpaceOnUse" x1="169.8" y1="121.2" x2="268.4" y2="160.8"><stop offset="0" stop-color="#7ee2a6"/><stop offset="1" stop-color="#27a468"/></linearGradient>
+</defs>
+<rect width="512" height="512" fill="url(#bg)"/>
+<rect width="512" height="512" fill="url(#glow)"/>
+<g filter="url(#drop)"><path d="M262.28 96.12A160.0 160.0 0 0 1 383.19 353.07L332.31 314.24A96.0 96.0 0 0 0 259.77 160.07Z" fill="url(#s0)"/><path d="M375.18 362.75A160.0 160.0 0 0 1 143.75 370.02L188.65 324.41A96.0 96.0 0 0 0 327.51 320.05Z" fill="url(#s1)"/><path d="M135.15 360.86A160.0 160.0 0 0 1 108.66 193.61L167.60 218.57A96.0 96.0 0 0 0 183.49 318.92Z" fill="url(#s2)"/><path d="M114.01 182.24A160.0 160.0 0 0 1 182.24 114.01L211.75 170.81A96.0 96.0 0 0 0 170.81 211.75Z" fill="url(#s3)"/><path d="M193.61 108.66A160.0 160.0 0 0 1 249.72 96.12L252.23 160.07A96.0 96.0 0 0 0 218.57 167.60Z" fill="url(#s4)"/></g>
+<circle cx="256" cy="256" r="96.0" fill="#ffffff" opacity=".0"/>
+<g filter="url(#soft)"><circle cx="256" cy="256" r="64" fill="url(#coin)"/></g>
+<circle cx="256" cy="256" r="62" fill="none" stroke="url(#rim)" stroke-width="3"/>
+<g transform="translate(256 256) scale(.255) translate(-256 -260)" fill="none" stroke="#fff" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><path d="M158 118l98 146 98-146"/><path d="M256 264v138"/><path d="M186 306h140"/><path d="M186 358h140"/></g>
+</svg>

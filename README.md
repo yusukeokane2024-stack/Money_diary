@@ -53,6 +53,9 @@ npm test           # 単体テスト + セキュリティルールのテスト (
 npm run test:e2e   # 実ブラウザ(Playwright)での通しテスト (2ユーザーの共有まで)
 ```
 
+## アイコンの変更
+ホーム画面のアイコンは `src/icon.svg` (絵柄) と `src/icon-180.png` / `icon-192.png` / `icon-512.png` です。絵柄は `python3 scripts/make-icons.py` で SVG を作り直し、`node scripts/make-icons.mjs` で PNG を書き出します (後者は Playwright が必要)。iPhone はホーム画面に追加した時点のアイコンを保存するため、変更後は一度削除して追加し直してください。
+
 ## 構成
 - `src/app.js` 画面 (最初に描画される。約28KB) / `src/data.js` Firebase とのやりとり (後から読み込み)
 - `src/lib/` 繰り返しの日付計算・検索 (純粋関数)
