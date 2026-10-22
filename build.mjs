@@ -2,16 +2,21 @@
 import * as esbuild from 'esbuild';
 import { cpSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { relative, resolve } from 'node:path';
 
 const emulator = process.argv.includes('--emulator');
+// 画面の「バージョン」に出す番号 (公開時は GitHub の commit、手元では git の commit)
+let sha = (process.env.GITHUB_SHA || '').slice(0, 7);
+if (!sha) { try { sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { sha = 'dev'; } }
+const build = `${new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)} · ${sha}`;
 rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist', { recursive: true });
 
 const result = await esbuild.build({
   entryPoints: { app: 'src/app.js', data: 'src/data.js' },
   bundle: true, splitting: true, format: 'esm', target: 'es2022', minify: true, legalComments: 'none',
-  outdir: 'dist', plugins: emulator ? [{
+  outdir: 'dist', define: { __BUILD__: JSON.stringify(build) }, plugins: emulator ? [{
     name: 'emulator-config',
     setup: (b) => b.onResolve({ filter: /firebase-config\.js$/ }, () => ({ path: resolve('src/firebase-config.emulator.js') })),
   }] : [], chunkNames: 'chunks/[name]-[hash]', metafile: true, logLevel: 'info',

@@ -6,7 +6,9 @@ import { monthGrid, compactYen, amountSize, dayTotals } from './lib/calendar.js'
 import { dueOccurrences, upcomingInMonth, today as jstToday } from './lib/recurring.js';
 import { categoryBreakdown, monthlyTrend, memberTotals, budgetStatus } from './lib/charts.js';
 
+/* global __BUILD__ */
 const $app = document.getElementById('app');
+const BUILD = typeof __BUILD__ === 'string' ? __BUILD__ : 'dev';
 const LS = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -834,7 +836,11 @@ function renderSettings() {
         const n = prompt('家計簿の名前', book?.name)?.trim(); if (!n) return;
         try { await D.renameBook(S.bookId, n); await reloadBooks(); } catch (e) { toast(D.friendly(e)); }
       } }, h('div', { class: 'ic' }, icon('pencil', 20)), h('div', { class: 'mid' }, '家計簿名を変更'), chev())),
-    h('div', { class: 'pad' }, h('button', { class: 'btn danger', onclick: logout }, icon('logout', 18), 'ログアウト')));
+    h('div', { class: 'pad' }, h('button', { class: 'btn danger', onclick: logout }, icon('logout', 18), 'ログアウト')),
+    h('div', { class: 'sectitle' }, 'アプリ'),
+    h('div', { class: 'card' }, h('div', { class: 'row', style: 'cursor:default' },
+      h('div', { class: 'mid' }, h('div', { class: 't' }, 'バージョン'), h('div', { class: 's num', 'data-build': BUILD }, BUILD)),
+      h('button', { class: 'btn sm ghost', onclick: refreshApp }, icon('repeat', 15), '最新版に更新'))));
   shell('設定', body, { fab: false });
 }
 
@@ -864,6 +870,16 @@ function openName() {
     h('button', { class: 'btn ghost', onclick: close }, 'キャンセル')));
   document.body.append(bg);
   setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+
+/** 保存済みのアプリの部品を消して、最新版を取得し直す (ログインやデータは消えない) */
+async function refreshApp() {
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+    await Promise.all(regs.map((r) => r.unregister()));
+    await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
+  } catch {}
+  location.reload();
 }
 
 async function logout() {
@@ -910,7 +926,12 @@ function renderAuth(mode = 'login') {
 // ---------- boot ----------
 async function boot() {
   // ホーム画面から開いたアプリは再読み込みされず再開されるため、戻ってきたときに日付の変化と繰り返し分を反映する
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { runMaterialize(); if (S.me) changed(); } });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {}); // 新しい版が公開されていれば取り込む
+    runMaterialize();
+    if (S.me) changed();
+  });
   window.addEventListener('pageshow', () => runMaterialize());
   window.addEventListener('online', () => runMaterialize());
   // アプリとして使うので拡大・縮小を無効にする (iOS Safari は viewport の user-scalable=no を無視するため、ジェスチャも止める)

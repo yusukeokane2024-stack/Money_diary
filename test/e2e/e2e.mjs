@@ -157,6 +157,14 @@ await a.reload();
 await a.click('a:has-text("設定")');
 await a.waitForSelector('.row .t:has-text("たろう2")'); // 再読み込みしても残る (ログイン情報にも保存)
 step('名前の変更: 即時反映 / 共有相手にも反映 / 再読み込み後も保持');
+
+// アプリのバージョン表示と「最新版に更新」(保存済みの部品を消して取得し直す。ログインは維持)
+const ver = (await a.textContent('[data-build]')).trim();
+assert.match(ver, /^\d{4}-\d{2}-\d{2} · ([0-9a-f]{7}|dev)$/);
+await a.click('button:has-text("最新版に更新")');
+await a.waitForSelector('.row .t:has-text("たろう2")', { timeout: 15000 }); // 再読み込み後も、ログインしたまま設定画面が出る
+assert.equal((await a.textContent('[data-build]')).trim(), ver);
+step(`アプリのバージョン表示 (${ver}) / 最新版に更新してもログインは維持`);
 await a.click('a:has-text("家計簿")');
 
 // ===== カレンダービュー =====
