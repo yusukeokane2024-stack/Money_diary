@@ -145,6 +145,19 @@ await a.waitForSelector('.row:has-text("花子のおやつ")', { timeout: 15000 
 assert.match(await a.textContent('.row:has-text("花子のおやつ")'), /はなこ/);
 step('相手の追加がリアルタイムに反映 (誰の記録か表示)');
 
+// ===== 名前の変更 =====
+await a.click('a:has-text("設定")');
+await a.click('button:has-text("名前を変更")');
+await a.fill('.sheet input', 'たろう2');
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.row .t:has-text("たろう2")');
+await b.waitForSelector('.row:has-text("ランチ 寿司"):has-text("たろう2")', { timeout: 15000 }); // 相手の画面にも反映
+await a.reload();
+await a.click('a:has-text("設定")');
+await a.waitForSelector('.row .t:has-text("たろう2")'); // 再読み込みしても残る (ログイン情報にも保存)
+step('名前の変更: 即時反映 / 共有相手にも反映 / 再読み込み後も保持');
+await a.click('a:has-text("家計簿")');
+
 // ===== カレンダービュー =====
 await a.click('button[data-view=cal]');
 await a.waitForSelector('.cal-cell.today');

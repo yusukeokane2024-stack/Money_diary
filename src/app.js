@@ -761,7 +761,9 @@ function renderSettings() {
 
   const body = h('div', {},
     h('div', { class: 'sectitle' }, 'アカウント'),
-    h('div', { class: 'card' }, h('div', { class: 'pad' }, h('b', {}, S.me.name), h('div', { class: 'muted' }, S.me.email))),
+    h('div', { class: 'card' }, h('div', { class: 'row', style: 'cursor:default' },
+      h('div', { class: 'mid' }, h('div', { class: 't' }, S.me.name), h('div', { class: 's' }, S.me.email)),
+      h('button', { class: 'btn sm ghost', onclick: openName }, icon('pencil', 15), '名前を変更'))),
     h('div', { class: 'sectitle' }, '家計簿'),
     h('div', { class: 'card' }, S.books.map((b) => h('button', { class: 'row', onclick: () => b.id !== S.bookId && switchTo(b.id) },
       h('div', { class: 'mid' }, b.name), b.id === S.bookId ? h('span', { class: 'chip' }, '表示中') : h('span', { class: 'muted' }, '切替')))),
@@ -789,6 +791,34 @@ function renderSettings() {
       } }, h('div', { class: 'ic' }, icon('pencil', 20)), h('div', { class: 'mid' }, '家計簿名を変更'), chev())),
     h('div', { class: 'pad' }, h('button', { class: 'btn danger', onclick: logout }, icon('logout', 18), 'ログアウト')));
   shell('設定', body, { fab: false });
+}
+
+function openName() {
+  const input = h('input', { type: 'text', maxlength: 40, value: S.me.name, autocomplete: 'nickname' });
+  const err = h('div', { class: 'err' });
+  const bg = h('div', { class: 'sheet-bg', onclick: (e) => e.target === bg && close() });
+  const close = () => bg.remove();
+  const btn = h('button', { class: 'btn', onclick: save }, '保存');
+  async function save() {
+    const n = input.value.trim();
+    if (!n) return (err.textContent = '名前を入力してください');
+    if (n.length > 40) return (err.textContent = '名前は40文字以内にしてください');
+    if (n === S.me.name) return close();
+    btn.disabled = true;
+    try {
+      await D.updateName(n, S.books.map((b) => b.id));
+      S.me = { ...S.me, name: n };
+      close();
+      changed();
+      toast('名前を変更しました');
+    } catch (e) { err.textContent = D.friendly(e); btn.disabled = false; }
+  }
+  bg.append(h('div', { class: 'sheet form' },
+    h('h2', {}, '名前を変更'), h('p', { class: 'muted', style: 'margin:0' }, '共有しているメンバーにも、この名前で表示されます。'),
+    h('label', {}, 'ニックネーム'), input, err, btn,
+    h('button', { class: 'btn ghost', onclick: close }, 'キャンセル')));
+  document.body.append(bg);
+  setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 
 async function logout() {

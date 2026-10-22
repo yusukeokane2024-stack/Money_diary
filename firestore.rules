@@ -50,6 +50,12 @@ service cloud.firestore {
               && get(/databases/$(db)/documents/invites/$(request.resource.data.code)).data.bookId == b
               && get(/databases/$(db)/documents/invites/$(request.resource.data.code)).data.expiresAt > request.time)
           );
+        // 本人だけが自分の表示名を変更できる (権限・招待コードは変更不可)
+        allow update: if signedIn() && request.auth.uid == u
+          && request.resource.data.keys().hasOnly(['role', 'name', 'code'])
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.get('code', null) == resource.data.get('code', null)
+          && text(request.resource.data.name, 40);
         allow delete: if resource.data.role != 'owner'
           && (isOwner(b) || (signedIn() && request.auth.uid == u));
       }

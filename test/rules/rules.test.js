@@ -142,3 +142,19 @@ test('予算: メンバーだけが設定でき、値は検証される', async 
   await assertFails(getDoc(bud('eve')));
   await assertSucceeds(deleteDoc(bud('bob')));
 });
+
+test('表示名の変更: 本人だけ・名前だけ変更できる', async () => {
+  await seedBook();
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'books', 'b1', 'members', 'bob'), { role: 'member', name: 'Bob', code: 'GOOD' }));
+  const mem = (u, who) => doc(db(u), 'books', 'b1', 'members', who);
+  await assertSucceeds(updateDoc(mem('bob', 'bob'), { name: 'ボブ' }));
+  await assertSucceeds(updateDoc(mem('alice', 'alice'), { name: 'アリス' })); // オーナーも自分の名前は変更可
+  await assertFails(updateDoc(mem('bob', 'bob'), { name: '' }));
+  await assertFails(updateDoc(mem('bob', 'bob'), { name: 'x'.repeat(41) }));
+  await assertFails(updateDoc(mem('bob', 'bob'), { role: 'owner' })); // 権限の昇格は不可
+  await assertFails(updateDoc(mem('bob', 'bob'), { code: 'OTHER' }));
+  await assertFails(updateDoc(mem('bob', 'bob'), { name: 'ボブ', extra: 1 }));
+  await assertFails(updateDoc(mem('alice', 'bob'), { name: '乗っ取り' })); // 他人の名前は、オーナーでも変更不可
+  await assertFails(updateDoc(mem('eve', 'bob'), { name: '乗っ取り' }));
+  await assertFails(updateDoc(mem('eve', 'eve'), { name: 'eve' })); // 非メンバーは自分の枠も作れない (更新対象が存在しない)
+});

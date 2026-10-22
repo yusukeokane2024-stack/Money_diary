@@ -131,6 +131,13 @@ export async function joinBook(code) {
   return bookId;
 }
 
+/** 表示名を変更する。ログイン情報と、参加しているすべての家計簿のメンバー情報を更新する。 */
+export async function updateName(name, bookIds) {
+  await updateProfile(auth.currentUser, { displayName: name });
+  const uid = auth.currentUser.uid;
+  await Promise.allSettled(bookIds.map((b) => updateDoc(doc(db, 'books', b, 'members', uid), { name })));
+}
+
 export async function removeMember(bookId, userId) {
   await deleteDoc(doc(db, 'books', bookId, 'members', userId));
   if (userId === me().uid) await deleteDoc(doc(db, 'users', userId, 'memberships', bookId)).catch(() => {});
