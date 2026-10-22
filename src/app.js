@@ -864,6 +864,9 @@ function renderAuth(mode = 'login') {
 
 // ---------- boot ----------
 async function boot() {
+  // アプリとして使うので拡大・縮小を無効にする (iOS Safari は viewport の user-scalable=no を無視するため、ジェスチャも止める)
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, (e) => e.preventDefault());
+  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   if ('serviceWorker' in navigator) {
     // 新しい版に切り替わったら一度だけ再読み込みして、古い版の部品が混ざらないようにする
     const had = !!navigator.serviceWorker.controller;
