@@ -43,3 +43,20 @@ export function firstFutureN(rec, now = today()) {
   while (occurrence(rec, n) < now && n < 100000) n++;
   return n;
 }
+
+/**
+ * まだ記録 (展開) されていない予定のうち、指定した月に入るもの。
+ * nextN 以降が未展開なので、記録済みの分は含まれず、二重に数えない。
+ * 例: 毎月の家賃 → 来月以降のカレンダーに「予定」として出せる。
+ */
+export function upcomingInMonth(rec, month, cap = 6000) {
+  if (!rec.active) return [];
+  const from = `${month}-01`, to = `${month}-31`;
+  const out = [];
+  for (let n = rec.nextN, i = 0; i < cap; n++, i++) {
+    const date = occurrence(rec, n);
+    if (date > to || (rec.endDate && date > rec.endDate)) break;
+    if (date >= from) out.push({ n, date });
+  }
+  return out;
+}

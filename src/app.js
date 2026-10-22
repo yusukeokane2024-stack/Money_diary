@@ -3,7 +3,7 @@
 import { searchTx } from './lib/search.js';
 import { icon, CATEGORY_ICONS } from './lib/icons.js';
 import { monthGrid, compactYen, dayTotals } from './lib/calendar.js';
-import { dueOccurrences, today as jstToday } from './lib/recurring.js';
+import { dueOccurrences, upcomingInMonth, today as jstToday } from './lib/recurring.js';
 import { categoryBreakdown, monthlyTrend, memberTotals, budgetStatus } from './lib/charts.js';
 
 const $app = document.getElementById('app');
@@ -280,28 +280,53 @@ function render() {
 }
 
 // ---------- rows ----------
+/**
+ * 表示する月の記録。実際の記録に、繰り返しの「予定」(まだ記録されていない未来分) を加えたもの。
+ * 予定は保存されておらず、日付が来て記録されると自動で本物に置き換わる (nextN で二重計上を防ぐ)。
+ */
+function monthItems() {
+  if (S.txs == null) return null;
+  const have = new Set(S.txs.map((t) => t.id)); // 記録済みと重なる予定は除く (書き込み直後の一瞬の二重表示を避ける)
+  const sched = [];
+  for (const r of S.recs) {
+    for (const { date } of upcomingInMonth(r, S.month)) {
+      const id = `r_${r.id}_${date}`;
+      if (have.has(id)) continue;
+      sched.push({ id: `p_${id}`, userId: r.userId, type: r.type, amount: r.amount, categoryId: r.categoryId ?? null, date, memo: r.memo || '', recurringId: r.id, scheduled: true });
+    }
+  }
+  if (!sched.length) return S.txs;
+  return [...S.txs, ...sched].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.scheduled ? 0 : 1) - (b.scheduled ? 0 : 1)));
+}
+
 function txRow(t, { onclick, showDate = false } = {}) {
   const c = S.cats.get(t.categoryId);
   const who = S.members.size > 1 ? S.members.get(t.userId)?.name : null;
   const sub = [showDate ? t.date.replaceAll('-', '/') : null, t.memo ? catName(t.categoryId) : null, who].filter(Boolean).join(' · ');
-  return h('button', { class: 'row', 'data-id': t.id, onclick: onclick || (() => openSheet({ tx: t })) },
+  // 予定の行は、タップすると元の繰り返し設定の編集画面を開く
+  const open = t.scheduled
+    ? () => { const r = S.recs.find((x) => x.id === t.recurringId); if (r) openSheet({ rec: r }); }
+    : () => openSheet({ tx: t });
+  return h('button', { class: 'row' + (t.scheduled ? ' sched' : ''), 'data-id': t.id, onclick: onclick || open },
     catChip(c),
     h('div', { class: 'mid' },
       h('div', { class: 't' }, t.memo || catName(t.categoryId)),
-      h('div', { class: 's' }, sub, t.recurringId && icon('repeat', 12))),
+      h('div', { class: 's' }, t.scheduled && h('span', { class: 'tag' }, '予定'), sub, t.recurringId && icon('repeat', 12))),
     h('div', { class: 'amt num ' + (t.type === 'income' ? 'inc' : '') }, (t.type === 'expense' ? '-' : '+') + yen(t.amount)));
 }
 
 // ---------- month view ----------
 function renderMonth() {
-  const txs = S.txs;
+  const txs = monthItems();
   const view = viewMode();
   let inc = 0, exp = 0;
   const byCat = new Map();
+  let schedInc = 0, schedExp = 0;
   for (const t of txs || []) {
-    if (t.type === 'income') inc += t.amount;
+    if (t.type === 'income') { inc += t.amount; if (t.scheduled) schedInc += t.amount; }
     else {
       exp += t.amount;
+      if (t.scheduled) schedExp += t.amount;
       const k = rootOf(t.categoryId)?.id ?? 0;
       byCat.set(k, (byCat.get(k) || 0) + t.amount);
     }
@@ -319,6 +344,7 @@ function renderMonth() {
     h('div', { class: 'summary' },
       h('div', { class: 's-inc' }, h('small', {}, '収入'), h('b', { class: 'num' }, yen(inc))),
       h('div', { class: 's-exp' }, h('small', {}, '支出'), h('b', { class: 'num' }, yen(exp)))),
+    (schedInc || schedExp) > 0 && h('div', { class: 'sched-note num' }, '予定を含む: ' + [schedExp ? `支出 ${yen(schedExp)}` : null, schedInc ? `収入 ${yen(schedInc)}` : null].filter(Boolean).join(' ・ ')),
     exp > 0 && h('div', { class: 'bar' }, parts.map(([id, v]) => h('i', { style: `width:${(v / exp) * 100}%;background:${colorOf(id)}` }))),
     exp > 0 && h('div', { class: 'legend' }, parts.slice(0, 6).map(([id, v]) =>
       h('span', { style: `--c:${colorOf(id)}` }, `${S.cats.get(id)?.name || '未分類'} ${Math.round((v / exp) * 100)}%`))),
@@ -467,13 +493,14 @@ function trendChart(data) {
 
 function renderGraph() {
   const type = graphType;
-  const bd = categoryBreakdown(S.txs || [], S.cats, type);
+  const items = monthItems();
+  const bd = categoryBreakdown(items || [], S.cats, type);
   const seg = h('div', { class: 'seg', style: 'margin:12px 12px 0' },
     [['expense', '支出'], ['income', '収入']].map(([v, l]) => h('button', { class: `${type === v ? 'on' : ''} ${v}`, 'data-type': v, onclick: () => { graphType = v; render(); } }, l)));
 
   const catCard = h('div', { class: 'card' },
     h('div', { class: 'g-title' }, 'カテゴリ別'),
-    S.txs == null ? h('div', { class: 'empty' }, '読み込み中…')
+    items == null ? h('div', { class: 'empty' }, '読み込み中…')
       : !bd.items.length ? h('div', { class: 'empty' }, `この月の${type === 'expense' ? '支出' : '収入'}はありません`)
         : [donut(bd.items, bd.total), h('div', { class: 'g-list' }, bd.items.map((it) => {
           const open = expanded.has(`${type}:${it.id}`);
@@ -494,7 +521,7 @@ function renderGraph() {
     h('div', { class: 'g-title' }, '月別の推移', h('span', { class: 'tr-legend' }, h('i', { class: 'i-inc' }), '収入', h('i', { class: 'i-exp' }), '支出')),
     trend ? trendChart(trend) : h('div', { class: 'empty', style: 'padding:30px' }, '読み込み中…'));
 
-  const mt = memberTotals(S.txs || [], type);
+  const mt = memberTotals(items || [], type);
   const memberCard = S.members.size > 1 && mt.total > 0 ? h('div', { class: 'card' },
     h('div', { class: 'g-title' }, 'メンバー別'),
     mt.items.map((m) => h('div', { class: 'row', style: 'cursor:default' },

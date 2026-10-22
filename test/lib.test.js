@@ -115,3 +115,17 @@ test('グラフ: メンバー別と予算ゲージ', () => {
   assert.deepEqual(budgetStatus(10000, 4000), { remaining: 6000, ratio: 0.4, over: false });
   assert.equal(budgetStatus(10000, 12000).over, true);
 });
+
+import { upcomingInMonth } from '../src/lib/recurring.js';
+test('予定: 未展開の分だけが、指定した月に出る', () => {
+  const r = { startDate: '2026-10-25', freq: 'monthly', every: 1, nextN: 1, active: true, endDate: null }; // 10/25 は展開済み (nextN=1)
+  assert.deepEqual(upcomingInMonth(r, '2026-10').map((x) => x.date), []);            // 今月分は記録済みなので予定に出ない
+  assert.deepEqual(upcomingInMonth(r, '2026-11').map((x) => x.date), ['2026-11-25']);
+  assert.deepEqual(upcomingInMonth(r, '2027-03').map((x) => x.date), ['2027-03-25']); // 数か月先も出る
+  assert.deepEqual(upcomingInMonth({ ...r, endDate: '2026-12-31' }, '2027-02').map((x) => x.date), []); // 終了日を過ぎたら出ない
+  assert.deepEqual(upcomingInMonth({ ...r, active: false }, '2026-11'), []);          // 停止中は出ない
+  const eom = { startDate: '2026-01-31', freq: 'monthly', every: 1, nextN: 0, active: true };
+  assert.deepEqual(upcomingInMonth(eom, '2026-02').map((x) => x.date), ['2026-02-28']); // 月末の丸め
+  const daily = { startDate: '2026-10-01', freq: 'daily', every: 1, nextN: 5, active: true };
+  assert.equal(upcomingInMonth(daily, '2026-10').length, 26); // 10/6〜10/31
+});

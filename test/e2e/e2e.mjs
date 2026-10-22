@@ -75,6 +75,7 @@ await a.click('.row:has-text("繰り返しの管理")');
 await a.click('text=繰り返しを追加');
 await a.fill('.amount-in', '80000');
 await a.fill('.sheet input[type=date]', '2026-07-31');
+await a.locator('.sheet input[type=date]').nth(1).fill('2026-09-30'); // 終了日: 9月末まで (今月以降に「予定」を出さず、日付に左右されないようにする)
 await a.click('.cats button:has-text("住居")');
 await a.fill('input[placeholder="例: ランチ"]', '家賃');
 await sheetSave(a);

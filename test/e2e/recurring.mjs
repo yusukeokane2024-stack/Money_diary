@@ -63,6 +63,37 @@ assert.match(await count('サブスクA'), /^1件/);
 assert.match(await count('サブスクB'), /^3件/);
 console.log('✓ 再読み込みしても重複しない');
 await a.click('a:has-text("家計簿")');
+// 予定: 毎月の繰り返しは、翌月以降のカレンダー/一覧に「予定」として出る (保存はされない)
+const shiftMonth = (m, d) => { const [y, mo] = m.split('-').map(Number); const t = y * 12 + (mo - 1) + d; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`; };
+const thisMonth = today.slice(0, 7);
+await a.click('a:has-text("家計簿")');
+await a.click('button[data-view=list]');
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, shiftMonth(thisMonth, 1));
+await a.waitForSelector('.row.sched:has-text("サブスクA")');
+if (process.env.SHOTS_DIR) await a.screenshot({ path: `${process.env.SHOTS_DIR}/fb-sched.png` });
+assert.equal(await a.locator('.row.sched:has-text("サブスクA")').count(), 1);
+assert.match(await a.textContent('.sched-note'), /予定を含む: 支出 ¥/);   // 合計に予定が含まれる旨を表示
+assert.match(await a.textContent('.s-exp'), /¥/);
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, shiftMonth(thisMonth, 4)); // 数か月先も出る
+await a.waitForSelector('.row.sched:has-text("サブスクA")');
+await a.click('.row.sched:has-text("サブスクA")'); // 予定をタップ → 元の繰り返し設定の編集画面
+await a.waitForSelector('.sheet h2:has-text("繰り返しを編集")');
+await a.click('.sheet .btn:has-text("キャンセル")');
+// 今月の分は本物の記録 (予定ではない)
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, thisMonth);
+await a.waitForSelector('.row:has-text("サブスクA")');
+assert.equal(await a.locator('.row.sched:has-text("サブスクA")').count(), 0);
+// 予定は検索に混ざらない
+assert.match(await count('サブスクA'), /^1件/);
+// カレンダー表示: 翌月の該当日に金額が出る
+await a.click('a:has-text("家計簿")');
+await a.click('button[data-view=cal]');
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, shiftMonth(thisMonth, 1));
+await a.waitForSelector('.cal-cell .a.e');
+assert.ok((await a.locator('.cal-cell .a.e').count()) >= 1);
+console.log('✓ 予定: 翌月・数か月先に表示 / 合計に含める旨を注記 / タップで編集 / 今月分は本物 / 検索に混ざらない / カレンダーにも出る');
+await a.click('button[data-view=list]');
+
 // D: 明日から毎日の繰り返し → いまは0件。日付が2日進んだ状態でアプリに戻ると反映される (再読み込みなし)
 const tomorrow = addDays(today, 1);
 await addViaSheet({ amount: 700, memo: 'サブスクD', date: tomorrow, freq: 'daily' });
