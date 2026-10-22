@@ -222,6 +222,23 @@ export async function saveRecurring(bookId, id, r, prev = null) {
   const changed = !prev || prev.freq !== fields.freq || prev.every !== fields.every || prev.startDate !== fields.startDate;
   await updateDoc(doc(col(bookId, 'recurrings'), id), { ...fields, userId: prev?.userId ?? me().uid, nextN: changed ? firstFutureN(fields) : prev.nextN });
 }
+/**
+ * 既存の記録を「1回目」として、繰り返しを新しく作る。
+ * 記録の更新 + 繰り返しの作成 + 記録との紐づけを、1つのバッチで同時に書く。
+ * nextN=1 から始めるので、1回目 (この記録) と同じ日の記録が二重に作られることはない。
+ */
+export async function saveTxAsRecurring(bookId, txId, t, r) {
+  const recRef = doc(col(bookId, 'recurrings'));
+  const b = writeBatch(db);
+  b.set(recRef, {
+    type: t.type, amount: t.amount, categoryId: t.categoryId ?? null, memo: t.memo || '', freq: r.freq, every: r.every || 1,
+    startDate: t.date, endDate: r.endDate || null, active: true, userId: me().uid, nextN: 1,
+  });
+  b.update(doc(col(bookId, 'transactions'), txId), { type: t.type, amount: t.amount, categoryId: t.categoryId ?? null, date: t.date, memo: t.memo || '', recurringId: recRef.id });
+  await b.commit();
+  return recRef.id;
+}
+
 export const deleteRecurring = (bookId, id) => deleteDoc(doc(col(bookId, 'recurrings'), id));
 
 /**

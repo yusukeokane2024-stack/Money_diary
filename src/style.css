@@ -225,3 +225,8 @@ button.cal-cell:active{background:var(--fill)}
 /* カレンダーの金額: 桁が多いときは小さくして、省略せず数字で収める */
 .cal-cell .a.sm{font-size:9px;letter-spacing:-.03em}
 .cal-cell .a.xs{font-size:8px;letter-spacing:-.04em}
+
+/* 繰り返しの案内 */
+.hint{margin:6px 2px 0;line-height:1.5}
+.from-rec{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--fill);font-size:13px;color:var(--sub)}
+.from-rec button{color:var(--accent);font-weight:600;font-size:13px;padding:0}

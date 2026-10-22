@@ -70,7 +70,7 @@ const S = {
   txs: null, all: null, hl: null, ready: false, selDay: null, budget: 0,
 };
 let D = null; // data.js (動的 import)
-let unsubBook = null, unsubMonth = null, unsubAll = null, materializing = false, lastRoute = '';
+let unsubBook = null, unsubMonth = null, unsubAll = null, materializing = false, materializeAgain = false, lastRoute = '';
 const loadData = () => (D ? Promise.resolve(D) : import('./data.js').then((m) => (D = m)));
 
 function setCats(list) {
@@ -139,11 +139,15 @@ function changed() {
  * 繰り返しの一覧が更新されたとき・アプリに戻ってきたとき・ネットに戻ったときに呼ぶ。
  */
 function runMaterialize() {
-  if (!D || !S.bookId || materializing) return;
+  if (!D || !S.bookId) return;
+  if (materializing) { materializeAgain = true; return; } // 処理中に呼ばれたら、終わったあとにもう一度実行する (取りこぼし防止)
   const now = jstToday();
   if (!S.recs.some((r) => r.active && dueOccurrences(r, now, 1).due.length)) return; // 未生成の分がなければ何もしない
   materializing = true;
-  D.materialize(S.bookId, S.recs).finally(() => { materializing = false; });
+  D.materialize(S.bookId, S.recs).finally(() => {
+    materializing = false;
+    if (materializeAgain) { materializeAgain = false; runMaterialize(); }
+  });
 }
 
 function stopAll() {
@@ -596,6 +600,7 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   const isRec = !!rec;
   const src = tx || rec || {};
   const isNew = !src.id;
+  const fromRec = !isRec && !isNew && src.recurringId ? S.recs.find((r) => r.id === src.recurringId) : null; // 繰り返しから作られた記録
   const st = { type: src.type || 'expense', categoryId: src.categoryId ?? null, freq: isRec ? src.freq || 'monthly' : '', every: src.every || 1, active: src.active !== false };
   const amount = h('input', { class: 'amount-in', type: 'text', inputmode: 'numeric', placeholder: '0', value: src.amount ? String(src.amount) : '',
     oninput: (e) => { e.target.value = e.target.value.replace(/[^\d]/g, ''); } });
@@ -643,8 +648,11 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
       if (ev < 1 || ev > 365) return (err.textContent = '間隔は1〜365で入力してください');
       if (endDate.value && (!isDate(endDate.value) || endDate.value < date.value)) return (err.textContent = '終了日は開始日以降にしてください');
       Object.assign(body, { freq: st.freq, every: ev, startDate: date.value, endDate: endDate.value || null, active: st.active });
-      fire(D.saveRecurring(S.bookId, isRec && !isNew ? src.id : null, body, isRec && !isNew ? src : null)
-        .then(() => D.materialize(S.bookId, S.recs)), '保存しました');
+      // 既存の記録に繰り返しを付ける: この記録を1回目にして、次回以降を作る。それ以外は繰り返し設定そのものを保存
+      const op = !isRec && !isNew
+        ? D.saveTxAsRecurring(S.bookId, src.id, { ...body, date: date.value }, body)
+        : D.saveRecurring(S.bookId, isRec && !isNew ? src.id : null, body, isRec && !isNew ? src : null);
+      fire(op.then(() => D.materialize(S.bookId, S.recs)), !isRec && !isNew ? '繰り返しを登録しました' : '保存しました');
     } else {
       body.date = date.value;
       S.selDay = date.value;
@@ -676,8 +684,11 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
     h('label', {}, isRec ? '開始日' : '日付'), date,
     h('label', {}, 'カテゴリ'), catBox,
     h('label', {}, 'メモ'), memo,
-    (isNew || isRec) && h('label', {}, isRec ? '頻度' : '繰り返し'),
-    (isNew || isRec) && freqSel,
+    fromRec
+      ? h('div', { class: 'from-rec' }, icon('repeat', 14), h('span', {}, 'この記録は、繰り返しから作られています。'),
+        h('button', { type: 'button', onclick: () => { close(); openSheet({ rec: fromRec }); } }, '繰り返し設定を開く'))
+      : [h('label', {}, isRec ? '頻度' : '繰り返し'), freqSel,
+        !isRec && !isNew && h('p', { class: 'muted hint' }, 'この記録を1回目として、次回以降を自動で記録します (日付が過去なら、今日までの分も記録されます)。')],
     repeatBox, err,
     h('button', { class: 'btn', onclick: save }, '保存'),
     !isNew && h('button', { class: 'btn ghost', onclick: copyIt }, icon('copy', 18), 'コピーして新規入力'),

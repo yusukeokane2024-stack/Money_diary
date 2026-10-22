@@ -7,6 +7,18 @@ const BASE = 'http://127.0.0.1:5000';
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 800 }, locale: 'ja-JP', timezoneId: 'Asia/Tokyo' });
 const a = await ctx.newPage();
+// 失敗したときに、画面の状態 (文字・アドレス・コンソールの警告) を残して原因を追えるようにする
+const logs = [];
+a.on('console', (m) => ['error', 'warning'].includes(m.type()) && logs.push(`${m.type()}: ${m.text().slice(0, 240)}`));
+process.on('uncaughtException', async (e) => {
+  console.error('FAILED:', e.message.split('\n')[0]);
+  console.error('url:', a.url());
+  console.error('body:', (await a.locator('body').innerText().catch(() => '')).slice(0, 700).replace(/\n/g, ' | '));
+  console.error('state:', JSON.stringify(await a.evaluate(() => ({ hash: location.hash, vis: document.visibilityState, rows: document.querySelectorAll('.row').length })).catch(() => null)));
+  console.error('console tail:', logs.slice(-6));
+  if (process.env.SHOTS_DIR) await a.screenshot({ path: `${process.env.SHOTS_DIR}/fail-recurring.png` }).catch(() => {});
+  process.exit(1);
+});
 a.on('pageerror', (e) => console.log('pageerror', e.message));
 a.on('console', (m) => ['error', 'warning'].includes(m.type()) && console.log('console', m.type(), m.text().slice(0, 200)));
 a.on('dialog', (d) => d.accept());
@@ -27,6 +39,13 @@ async function addViaSheet({ amount, memo, date, freq }) {
   await a.fill('input[placeholder="例: ランチ"]', memo);
   if (freq) await a.selectOption('.sheet select', freq);
   await a.click('.sheet .btn:has-text("保存")');
+}
+// 条件に合う表示になるまで待つ (固定の待ち時間だと、動作が少し遅れたときに失敗するため)
+async function countUntil(q, re, ms = 12000) {
+  const t0 = Date.now();
+  let last = '';
+  while (Date.now() - t0 < ms) { last = await count(q); if (re.test(last)) return last; await a.waitForTimeout(400); }
+  return last;
 }
 const count = async (q) => {
   await a.click('a:has-text("検索")');
@@ -121,14 +140,54 @@ await a.waitForSelector('.row.sched:has-text("サブスクA")');
 console.log('✓ 一時停止スイッチ: オフで予定が消え「停止中」と出る / オンに戻すと予定が戻る');
 await a.evaluate((m) => { location.hash = `#/month/${m}`; }, thisMonth);
 
+// 既存の記録を繰り返しにする: その記録が1回目になり、同じ日の記録が二重にならない
+await a.click('a:has-text("家計簿")');
+await a.click('button[data-view=list]');
+await addViaSheet({ amount: 3000, memo: 'ジム代', date: today });
+await a.waitForSelector('.row:has-text("ジム代")');
+assert.match(await count('ジム代'), /^1件/);
+await a.click('a:has-text("家計簿")');
+await a.click('.row:has-text("ジム代")');
+await a.waitForSelector('.sheet h2:has-text("記録を編集")');
+assert.match(await a.textContent('.sheet .hint'), /1回目として/);       // 既存の記録にも「繰り返し」の選択が出る
+await a.selectOption('.sheet select', 'monthly');
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.sheet', { state: 'detached' });
+await a.waitForTimeout(2500);
+assert.match(await count('ジム代'), /^1件/);                           // 今日の分は二重にならない
+await a.click('a:has-text("家計簿")');
+await a.waitForSelector('.row:has-text("ジム代") .s svg');              // 繰り返しのマークが付く
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, nextMonth);
+await a.waitForSelector('.row.sched:has-text("ジム代")');              // 翌月に予定が出る
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, thisMonth);
+await a.click('.row:has-text("ジム代")');                               // 繰り返しから作られた記録を開くと、元の設定へ移れる
+await a.waitForSelector('.sheet .from-rec');
+assert.equal(await a.locator('.sheet select').count(), 0);
+await a.click('.sheet .from-rec button');
+await a.waitForSelector('.sheet h2:has-text("繰り返しを編集")');
+await a.click('.sheet .btn:has-text("キャンセル")');
+console.log('✓ 既存の記録を繰り返しに: 1回目として登録 / 二重にならない / マーク / 翌月に予定 / 元の設定へのリンク');
+
+// 過去の日付の記録を繰り返しにすると、今日までの分も記録される
+await addViaSheet({ amount: 800, memo: 'ジム過去', date: addDays(today, -75) });
+await a.waitForSelector('.row:has-text("ジム過去")');
+await a.click('.row:has-text("ジム過去")');
+await a.waitForSelector('.sheet h2:has-text("記録を編集")');
+await a.selectOption('.sheet select', 'monthly');
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.sheet', { state: 'detached' });
+await a.waitForTimeout(3000);
+assert.match(await count('ジム過去'), /^3件 ・ 支出 ¥2,400/);           // 元の1件 + 今日までの2件
+console.log('✓ 過去の記録を繰り返しに: 元の1件 + 今日までの分が記録される');
+await a.click('a:has-text("家計簿")');
+
 // D: 明日から毎日の繰り返し → いまは0件。日付が2日進んだ状態でアプリに戻ると反映される (再読み込みなし)
 const tomorrow = addDays(today, 1);
 await addViaSheet({ amount: 700, memo: 'サブスクD', date: tomorrow, freq: 'daily' });
 await a.waitForTimeout(2500);
 assert.match(await count('サブスクD'), /該当する記録はありません/);
 await a.evaluate(() => { const real = Date.now; Date.now = () => real() + 2 * 86400e3; document.dispatchEvent(new Event('visibilitychange')); });
-await a.waitForTimeout(3500);
-assert.match(await count('サブスクD'), /^2件 ・ 支出 ¥1,400/); console.log('✓ アプリに戻ると(日付が進んでいれば)再読み込みなしで反映');
+assert.match(await countUntil('サブスクD', /^2件 ・ 支出 ¥1,400/), /^2件 ・ 支出 ¥1,400/); console.log('✓ アプリに戻ると(日付が進んでいれば)再読み込みなしで反映');
 await a.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
 await a.waitForTimeout(2500);
 assert.match(await count('サブスクD'), /^2件/); console.log('✓ もう一度戻っても増えない');
