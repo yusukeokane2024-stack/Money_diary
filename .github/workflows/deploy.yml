@@ -5,6 +5,11 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# 同時に複数の公開が走らないように、1つずつ順番に実行する (待機中のものは最新だけ残る)
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
