@@ -8,8 +8,11 @@ const cfg = JSON.parse(readFileSync('firebase.json', 'utf8'));
 for (const g of cfg.hosting.headers) for (const h of g.headers)
   if (h.key === 'Content-Security-Policy') h.value = h.value.replace("connect-src 'self'", "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*");
 writeFileSync('.firebase.emulator.json', JSON.stringify(cfg));
+const scripts = process.argv.length > 2 ? process.argv.slice(2) : ['test/e2e/e2e.mjs', 'test/e2e/recurring.mjs'];
 try {
-  execFileSync('npx', ['firebase', 'emulators:exec', '--config', '.firebase.emulator.json', '--only', 'firestore,auth,hosting', '--project', 'demo-money-diary', 'node test/e2e/e2e.mjs'], { stdio: 'inherit' });
+  for (const script of scripts) {
+    execFileSync('npx', ['firebase', 'emulators:exec', '--config', '.firebase.emulator.json', '--only', 'firestore,auth,hosting', '--project', 'demo-money-diary', `node ${script}`], { stdio: 'inherit' });
+  }
 } finally {
   execFileSync('rm', ['-f', '.firebase.emulator.json']);
 }

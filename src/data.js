@@ -229,7 +229,15 @@ export const deleteRecurring = (bookId, id) => deleteDoc(doc(col(bookId, 'recurr
  * recurring ごとにトランザクションで「取引の作成 + nextN の更新」を同時に行うので、
  * 複数人が同時に開いても二重登録されず、編集・削除した取引が復活することもない。
  */
-export async function materialize(bookId, recurrings) {
+let materializeChain = Promise.resolve();
+export function materialize(bookId, recurrings) {
+  // 同時に複数のトランザクションが走ると片方が衝突してやり直しになるので、1つずつ順番に実行する
+  const run = () => materializeNow(bookId, recurrings);
+  materializeChain = materializeChain.then(run, run);
+  return materializeChain;
+}
+
+async function materializeNow(bookId, recurrings) {
   let made = 0;
   for (const r of recurrings.filter((x) => x.active)) {
     for (let guard = 0; guard < 50; guard++) {

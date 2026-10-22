@@ -3,6 +3,7 @@
 import { searchTx } from './lib/search.js';
 import { icon, CATEGORY_ICONS } from './lib/icons.js';
 import { monthGrid, compactYen, dayTotals } from './lib/calendar.js';
+import { dueOccurrences, today as jstToday } from './lib/recurring.js';
 import { categoryBreakdown, monthlyTrend, memberTotals, budgetStatus } from './lib/charts.js';
 
 const $app = document.getElementById('app');
@@ -67,7 +68,7 @@ const S = {
   txs: null, all: null, hl: null, ready: false, selDay: null, budget: 0,
 };
 let D = null; // data.js (動的 import)
-let unsubBook = null, unsubMonth = null, unsubAll = null, matDone = false, lastRoute = '';
+let unsubBook = null, unsubMonth = null, unsubAll = null, materializing = false, lastRoute = '';
 const loadData = () => (D ? Promise.resolve(D) : import('./data.js').then((m) => (D = m)));
 
 function setCats(list) {
@@ -131,10 +132,22 @@ function changed() {
   });
 }
 
+/**
+ * 今日までに発生している繰り返し分があれば、取引として記録する (二重登録されない)。
+ * 繰り返しの一覧が更新されたとき・アプリに戻ってきたとき・ネットに戻ったときに呼ぶ。
+ */
+function runMaterialize() {
+  if (!D || !S.bookId || materializing) return;
+  const now = jstToday();
+  if (!S.recs.some((r) => r.active && dueOccurrences(r, now, 1).due.length)) return; // 未生成の分がなければ何もしない
+  materializing = true;
+  D.materialize(S.bookId, S.recs).finally(() => { materializing = false; });
+}
+
 function stopAll() {
   unsubBook?.(); unsubMonth?.(); unsubAll?.();
   unsubBook = unsubMonth = unsubAll = null;
-  S.all = null; matDone = false;
+  S.all = null;
 }
 
 function openBook(bookId, month = S.month) {
@@ -147,11 +160,7 @@ function openBook(bookId, month = S.month) {
   unsubBook = D.watchBook(bookId, {
     categories: (l) => { setCats(l); changed(); },
     members: (l) => { S.members = new Map(l.map((m) => [m.id, m])); changed(); },
-    recurrings: (l) => {
-      S.recs = l;
-      if (!matDone) { matDone = true; D.materialize(bookId, l); }
-      changed();
-    },
+    recurrings: (l) => { S.recs = l; changed(); runMaterialize(); },
     budget: (v) => { S.budget = v; changed(); },
     error: onErr,
   });
@@ -864,6 +873,10 @@ function renderAuth(mode = 'login') {
 
 // ---------- boot ----------
 async function boot() {
+  // ホーム画面から開いたアプリは再読み込みされず再開されるため、戻ってきたときに日付の変化と繰り返し分を反映する
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { runMaterialize(); if (S.me) changed(); } });
+  window.addEventListener('pageshow', () => runMaterialize());
+  window.addEventListener('online', () => runMaterialize());
   // アプリとして使うので拡大・縮小を無効にする (iOS Safari は viewport の user-scalable=no を無視するため、ジェスチャも止める)
   for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, (e) => e.preventDefault());
   document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
