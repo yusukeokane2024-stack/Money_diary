@@ -239,6 +239,35 @@ export async function saveTxAsRecurring(bookId, txId, t, r) {
   return recRef.id;
 }
 
+/**
+ * 繰り返しから作られた項目 (記録 または 予定) を変更する。
+ *  scope='one'       : この項目だけ変更。予定 (まだ記録されていない) なら、その1回分だけ別の内容で記録する。
+ *  scope='following' : この項目以降すべて。繰り返し設定 (今後の記録・予定) と、すでにある以降の記録をまとめて変更する。
+ *                      日付は変更しない (繰り返しの日付は設定の開始日で決まるため)。
+ * item: { id, date, scheduled?, recurringId } / f: { type, amount, categoryId, memo, date } / rec: 元の繰り返し設定
+ */
+export async function saveOccurrence(bookId, item, f, scope, rec) {
+  const fields = { type: f.type, amount: f.amount, categoryId: f.categoryId ?? null, memo: f.memo || '' };
+  const txCol = col(bookId, 'transactions');
+  if (scope === 'one') {
+    if (item.scheduled) {
+      // 日付が来たときに自動記録で上書きされないよう、予定の元の日付で決まる ID で作る (記録処理は、すでにある記録を残す)
+      return setDoc(doc(txCol, `r_${rec.id}_${item.date}`), { ...fields, userId: rec.userId, date: f.date, recurringId: rec.id, createdAt: serverTimestamp() });
+    }
+    return updateDoc(doc(txCol, item.id), { ...fields, date: f.date });
+  }
+  // これ以降すべて: 繰り返し設定 + すでにある「この日付以降」の記録
+  const snap = await getDocs(query(txCol, where('recurringId', '==', rec.id)));
+  const targets = snap.docs.filter((d) => d.data().date >= item.date).map((d) => d.ref);
+  if (!item.scheduled && !targets.some((r) => r.id === item.id)) targets.push(doc(txCol, item.id));
+  const ops = [(b) => b.update(doc(col(bookId, 'recurrings'), rec.id), fields), ...targets.map((ref) => (b) => b.update(ref, fields))];
+  for (let i = 0; i < ops.length; i += 400) { // 1回のバッチは500件まで
+    const b = writeBatch(db);
+    ops.slice(i, i + 400).forEach((op) => op(b));
+    await b.commit();
+  }
+}
+
 export const deleteRecurring = (bookId, id) => deleteDoc(doc(col(bookId, 'recurrings'), id));
 
 /**
@@ -266,12 +295,16 @@ async function materializeNow(bookId, recurrings) {
         if (!rec.active) return 0;
         const { due, nextN } = dueOccurrences(rec, today(), 400);
         if (!due.length) return 0;
-        for (const { date } of due) {
-          t.set(doc(col(bookId, 'transactions'), `r_${r.id}_${date}`), {
+        // 「この項目のみ」変更して先に作られている記録は、上書きせず残す (読み取りは、書き込みより先に行う)
+        const refs = due.map(({ date }) => doc(col(bookId, 'transactions'), `r_${r.id}_${date}`));
+        const exists = (await Promise.all(refs.map((x) => t.get(x)))).map((x) => x.exists());
+        due.forEach(({ date }, i) => {
+          if (exists[i]) return;
+          t.set(refs[i], {
             userId: rec.userId, type: rec.type, amount: rec.amount, categoryId: rec.categoryId ?? null,
             date, memo: rec.memo || '', recurringId: r.id, createdAt: serverTimestamp(),
           });
-        }
+        });
         t.update(ref, { nextN });
         return due.length;
       }).catch(() => -1); // オフライン等: 次回起動時にやり直す

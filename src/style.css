@@ -230,3 +230,7 @@ button.cal-cell:active{background:var(--fill)}
 .hint{margin:6px 2px 0;line-height:1.5}
 .from-rec{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--fill);font-size:13px;color:var(--sub)}
 .from-rec button{color:var(--accent);font-weight:600;font-size:13px;padding:0}
+
+/* 変更の範囲 (この項目のみ / これ以降すべて) */
+.seg.scope{margin-top:2px}
+.form input:disabled{opacity:.5}

@@ -95,7 +95,10 @@ assert.match(await a.textContent('.sched-note'), /予定を含む: 支出 ¥/); 
 assert.match(await a.textContent('.s-exp'), /¥/);
 await a.evaluate((m) => { location.hash = `#/month/${m}`; }, shiftMonth(thisMonth, 4)); // 数か月先も出る
 await a.waitForSelector('.row.sched:has-text("サブスクA")');
-await a.click('.row.sched:has-text("サブスクA")'); // 予定をタップ → 元の繰り返し設定の編集画面
+await a.click('.row.sched:has-text("サブスクA")'); // 予定をタップ → 「予定を編集」(この項目のみ / これ以降すべて を選べる)
+await a.waitForSelector('.sheet h2:has-text("予定を編集")');
+assert.equal(await a.locator('.sheet .scope button').count(), 2);
+await a.click('.sheet .from-rec button');          // 「繰り返し設定を開く」 → 元の繰り返し設定の編集画面
 await a.waitForSelector('.sheet h2:has-text("繰り返しを編集")');
 await a.click('.sheet .btn:has-text("キャンセル")');
 // 今月の分は本物の記録 (予定ではない)
@@ -180,6 +183,97 @@ await a.waitForTimeout(3000);
 assert.match(await count('ジム過去'), /^3件 ・ 支出 ¥2,400/);           // 元の1件 + 今日までの2件
 console.log('✓ 過去の記録を繰り返しに: 元の1件 + 今日までの分が記録される');
 await a.click('a:has-text("家計簿")');
+
+// ===== 繰り返しの項目の編集: 「この項目のみ」/「これ以降すべて」 =====
+const daysBetween = (d1, d2) => Math.round((Date.parse(`${d2}T00:00:00Z`) - Date.parse(`${d1}T00:00:00Z`)) / 86400e3);
+const fmt = (d) => d.replaceAll('-', '/');
+await a.click('a:has-text("家計簿")');
+await a.click('button[data-view=list]');
+await addViaSheet({ amount: 1000, memo: 'シリーズX', date: addDays(today, -80), freq: 'monthly' }); // 過去3回 + 以降は予定
+assert.match(await countUntil('シリーズX', /^3件 ・ 支出 ¥3,000/), /^3件 ・ 支出 ¥3,000/);
+// k=1: 真ん中の記録 / k=2: いちばん古い記録 (検索結果は新しい順。最新は今月の予定と同じ月になりうるので使わない)
+async function openSeries(k) {
+  await count('シリーズX');
+  await a.locator('.row:has-text("シリーズX")').nth(k).click();       // 検索結果をタップ → その月へ移動
+  await a.waitForSelector('.row.flash');
+  await a.locator('.row:has-text("シリーズX")').first().click();      // 月の一覧の記録をタップ → 編集画面
+  await a.waitForSelector('.sheet h2:has-text("記録を編集")');
+}
+const seriesAmount = async () => (await (async () => { await a.click('a:has-text("設定")'); await a.click('.row:has-text("繰り返しの管理")'); await a.waitForSelector('h1:has-text("繰り返しの管理")'); return a.textContent('.row:has-text("シリーズX")'); })());
+
+// (1) これ以降すべて: 真ん中の記録を 1,500 に → 真ん中と最新が 1,500、いちばん古い記録は 1,000 のまま。繰り返し設定も 1,500
+await openSeries(1);
+assert.equal(await a.locator('.sheet .scope button.on').getAttribute('data-scope'), 'one');   // 初期は「この項目のみ」
+await a.click('.sheet [data-scope=following]');
+assert.equal(await a.locator('.sheet input[type=date]').isDisabled(), true);                  // 「これ以降すべて」では日付は変えられない
+await a.fill('.amount-in', '1500');
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.sheet', { state: 'detached' });
+assert.match(await countUntil('シリーズX', /^3件 ・ 支出 ¥4,000/), /^3件 ・ 支出 ¥4,000/);      // 1,000 + 1,500 + 1,500
+assert.match(await seriesAmount(), /¥1,500/);
+// (2) この項目のみ: いちばん古い記録だけを 700 に → ほかと繰り返し設定は変わらない
+await openSeries(2);
+assert.match(await a.textContent('.sheet .hint'), /この1件だけ/);
+await a.fill('.amount-in', '700');
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.sheet', { state: 'detached' });
+assert.match(await countUntil('シリーズX', /^3件 ・ 支出 ¥3,700/), /^3件 ・ 支出 ¥3,700/);      // 700 + 1,500 + 1,500
+assert.match(await seriesAmount(), /¥1,500/);                                                  // 繰り返し設定は変わらない
+console.log('✓ 繰り返しの記録: 「これ以降すべて」は以降と設定を変更 / 「この項目のみ」は1件だけ');
+
+// (3) 予定を「この項目のみ」変更 → その1回分だけ別の内容で記録され、ほかの予定は変わらない
+async function gotoSched(from) {
+  for (let i = from; i < from + 4; i++) {
+    await a.evaluate((m) => { location.hash = `#/month/${m}`; }, shiftMonth(thisMonth, i));
+    await a.waitForSelector('.summary');
+    await a.waitForTimeout(500);
+    if (await a.locator('.row.sched:has-text("シリーズX")').count()) return i;
+  }
+  throw new Error('シリーズXの予定が見つからない');
+}
+await a.click('a:has-text("家計簿")');
+const i1 = await gotoSched(0);
+await a.click('.row.sched:has-text("シリーズX")');
+await a.waitForSelector('.sheet h2:has-text("予定を編集")');
+assert.equal(await a.locator('.sheet .btn:has-text("削除")').count(), 0);                      // 予定には削除ボタンを出さない
+const date1 = await a.inputValue('.sheet input[type=date]');
+await a.fill('.amount-in', '400');
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.sheet', { state: 'detached' });
+await a.waitForFunction((d) => document.querySelectorAll('.row:not(.sched)').length > 0, date1);
+assert.match(await a.textContent('.row:not(.sched):has-text("シリーズX")'), /-¥400/);           // その1回分は、本物の記録になる
+assert.equal(await a.locator('.row.sched:has-text("シリーズX")').count(), 0);
+const i2 = await gotoSched(i1 + 1);                                                           // 次の予定は、元の金額のまま
+assert.match(await a.textContent('.row.sched:has-text("シリーズX")'), /¥1,500/);
+await a.click('.row.sched:has-text("シリーズX")');
+await a.waitForSelector('.sheet h2:has-text("予定を編集")');
+const date2 = await a.inputValue('.sheet input[type=date]');
+await a.click('.sheet .btn:has-text("キャンセル")');
+console.log('✓ 予定を「この項目のみ」変更: その1回分だけ記録 / 次の予定は変わらない');
+
+// (4) 日付が来て自動記録が走っても、変更した記録は上書きされない (次の回は普通に記録される)
+await a.evaluate((off) => { window.__realNow ??= Date.now; Date.now = () => window.__realNow() + off * 86400e3; document.dispatchEvent(new Event('visibilitychange')); }, daysBetween(today, date2) + 1);
+let ok = false;
+for (let i = 0; i < 25 && !ok; i++) { await count('シリーズX'); ok = (await a.locator(`.row:has-text("${fmt(date2)}")`).count()) > 0; if (!ok) await a.waitForTimeout(500); }
+assert.equal(ok, true, '次の回が自動記録される');
+assert.equal(await a.locator(`.row:has-text("${fmt(date1)}")`).count(), 1);                    // 変更した回は、二重にならない
+assert.match(await a.textContent(`.row:has-text("${fmt(date1)}")`), /-¥400/);                  // 上書きされず 400 のまま
+await a.evaluate(() => { Date.now = window.__realNow; });
+console.log('✓ 日付が来ても、変更した記録は上書きされない');
+
+// (5) 予定を「これ以降すべて」変更 → 繰り返し設定と、以降の予定が変わる
+await a.click('a:has-text("家計簿")');
+await gotoSched(0);
+await a.click('.row.sched:has-text("シリーズX")');
+await a.waitForSelector('.sheet h2:has-text("予定を編集")');
+await a.click('.sheet [data-scope=following]');
+await a.fill('.amount-in', '2500');
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.sheet', { state: 'detached' });
+await a.waitForFunction(() => /¥2,500/.test([...document.querySelectorAll('.row.sched')].find((r) => /シリーズX/.test(r.textContent))?.textContent || ''));
+assert.match(await seriesAmount(), /¥2,500/);
+console.log('✓ 予定を「これ以降すべて」変更: 繰り返し設定と以降の予定が変わる');
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, thisMonth);
 
 // D: 明日から毎日の繰り返し → いまは0件。日付が2日進んだ状態でアプリに戻ると反映される (再読み込みなし)
 const tomorrow = addDays(today, 1);

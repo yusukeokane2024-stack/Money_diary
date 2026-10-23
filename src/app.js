@@ -309,10 +309,7 @@ function txRow(t, { onclick, showDate = false } = {}) {
   const c = S.cats.get(t.categoryId);
   const who = S.members.size > 1 ? S.members.get(t.userId)?.name : null;
   const sub = [showDate ? t.date.replaceAll('-', '/') : null, t.memo ? catName(t.categoryId) : null, who].filter(Boolean).join(' · ');
-  // 予定の行は、タップすると元の繰り返し設定の編集画面を開く
-  const open = t.scheduled
-    ? () => { const r = S.recs.find((x) => x.id === t.recurringId); if (r) openSheet({ rec: r }); }
-    : () => openSheet({ tx: t });
+  const open = () => openSheet({ tx: t }); // 予定の行も同じ編集画面 (繰り返しの項目は「この項目のみ / これ以降すべて」を選べる)
   return h('button', { class: 'row' + (t.scheduled ? ' sched' : ''), 'data-id': t.id, onclick: onclick || open },
     catChip(c),
     h('div', { class: 'mid' },
@@ -600,8 +597,9 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   const isRec = !!rec;
   const src = tx || rec || {};
   const isNew = !src.id;
-  const fromRec = !isRec && !isNew && src.recurringId ? S.recs.find((r) => r.id === src.recurringId) : null; // 繰り返しから作られた記録
-  const st = { type: src.type || 'expense', categoryId: src.categoryId ?? null, freq: isRec ? src.freq || 'monthly' : '', every: src.every || 1, active: src.active !== false };
+  const fromRec = !isRec && !isNew && src.recurringId ? S.recs.find((r) => r.id === src.recurringId) : null; // 繰り返しから作られた項目 (記録・予定)
+  const isSched = !!src.scheduled;
+  const st = { type: src.type || 'expense', categoryId: src.categoryId ?? null, freq: isRec ? src.freq || 'monthly' : '', every: src.every || 1, active: src.active !== false, scope: 'one' };
   const amount = h('input', { class: 'amount-in', type: 'text', inputmode: 'numeric', placeholder: '0', value: src.amount ? String(src.amount) : '',
     oninput: (e) => { e.target.value = e.target.value.replace(/[^\d]/g, ''); } });
   const date = h('input', { type: 'date', value: (isRec ? src.startDate : src.date) || defDate || todayStr() });
@@ -626,6 +624,22 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
         catChip(c, 18), (depth ? '└ ' : '') + c.name)),
       h('button', { type: 'button', onclick: () => { close(); go('#/categories'); } }, h('div', { class: 'ic' }, icon('pencil', 18)), '編集'));
   }
+  /** 繰り返しの項目: 「この項目のみ」か「これ以降すべて」か */
+  const scopeBox = h('div', {});
+  function drawScope() {
+    scopeBox.replaceChildren(
+      h('label', {}, '変更の範囲'),
+      h('div', { class: 'seg scope' }, [['one', 'この項目のみ'], ['following', 'これ以降すべて']].map(([v, l]) =>
+        h('button', { type: 'button', 'data-scope': v, class: st.scope === v ? 'on' : '', onclick: () => {
+          st.scope = v;
+          date.disabled = v === 'following'; // 「これ以降すべて」では、日付は変えられない (繰り返しの日付は設定で決まる)
+          if (v === 'following') date.value = src.date;
+          drawScope();
+        } }, l))),
+      h('p', { class: 'muted hint' }, st.scope === 'following'
+        ? '今回の項目と、これ以降の記録・予定 (繰り返し設定を含む) の、金額・カテゴリ・メモを変更します。これより前の記録は変わりません。日付は変更できません。'
+        : isSched ? 'この1回分だけを、別の内容で記録します。ほかの予定は変わりません。' : 'この1件だけを変更します。ほかの記録や繰り返し設定は変わりません。'));
+  }
   function drawRepeat() {
     repeatBox.replaceChildren(st.freq && h('div', {},
       h('label', {}, '間隔'), h('div', { class: 'every-row' }, every, h('span', {}, FREQ[st.freq] + 'ごと')),
@@ -643,6 +657,18 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
     if (!Number.isInteger(amt) || amt < 1 || amt > 999_999_999) return (err.textContent = '金額は1〜999,999,999の整数で入力してください');
     if (!isDate(date.value)) return (err.textContent = '日付を入力してください');
     const body = { type: st.type, amount: amt, categoryId: st.categoryId, memo: memo.value.trim() };
+    if (fromRec) { // 繰り返しから作られた項目: 「この項目のみ」か「これ以降すべて」で保存
+      const f = { ...body, date: st.scope === 'following' ? src.date : date.value };
+      fire(D.saveOccurrence(S.bookId, src, f, st.scope, fromRec).then(() => D.materialize(S.bookId, S.recs)),
+        st.scope === 'following' ? 'これ以降すべてを変更しました' : '変更しました');
+      if (st.scope === 'one') {
+        S.selDay = f.date;
+        const m = f.date.slice(0, 7);
+        if ((route().parts[0] || 'month') !== 'month' || m !== S.month) go(`#/month/${m}`);
+      }
+      close();
+      return;
+    }
     if (isRec || st.freq) {
       const ev = Math.floor(Number(every.value)) || 1;
       if (ev < 1 || ev > 365) return (err.textContent = '間隔は1〜365で入力してください');
@@ -676,23 +702,23 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
     close();
   }
 
-  drawSeg(); drawCats(); drawRepeat();
+  drawSeg(); drawCats(); drawRepeat(); if (fromRec) drawScope();
   bg.append(h('div', { class: 'sheet form' },
-    h('h2', {}, copied ? (isRec ? '繰り返しをコピーして追加' : '記録をコピーして追加') : isRec ? (isNew ? '繰り返しを追加' : '繰り返しを編集') : isNew ? '記録を追加' : '記録を編集'),
+    h('h2', {}, copied ? (isRec ? '繰り返しをコピーして追加' : '記録をコピーして追加') : isRec ? (isNew ? '繰り返しを追加' : '繰り返しを編集') : isNew ? '記録を追加' : isSched ? '予定を編集' : '記録を編集'),
     h('div', { style: 'margin-top:10px' }, seg),
     h('label', {}, '金額'), h('div', { class: 'amount-wrap' }, amount),
     h('label', {}, isRec ? '開始日' : '日付'), date,
     h('label', {}, 'カテゴリ'), catBox,
     h('label', {}, 'メモ'), memo,
     fromRec
-      ? h('div', { class: 'from-rec' }, icon('repeat', 14), h('span', {}, 'この記録は、繰り返しから作られています。'),
-        h('button', { type: 'button', onclick: () => { close(); openSheet({ rec: fromRec }); } }, '繰り返し設定を開く'))
+      ? [scopeBox, h('div', { class: 'from-rec' }, icon('repeat', 14), h('span', {}, isSched ? 'これは、繰り返しの予定です。' : 'この記録は、繰り返しから作られています。'),
+        h('button', { type: 'button', onclick: () => { close(); openSheet({ rec: fromRec }); } }, '繰り返し設定を開く'))]
       : [h('label', {}, isRec ? '頻度' : '繰り返し'), freqSel,
         !isRec && !isNew && h('p', { class: 'muted hint' }, 'この記録を1回目として、次回以降を自動で記録します (日付が過去なら、今日までの分も記録されます)。')],
     repeatBox, err,
     h('button', { class: 'btn', onclick: save }, '保存'),
     !isNew && h('button', { class: 'btn ghost', onclick: copyIt }, icon('copy', 18), 'コピーして新規入力'),
-    !isNew && h('button', { class: 'btn danger', onclick: del }, '削除'),
+    !isNew && !isSched && h('button', { class: 'btn danger', onclick: del }, '削除'),
     h('button', { class: 'btn ghost', onclick: close }, 'キャンセル')));
   document.body.append(bg);
   setTimeout(() => amount.focus(), 50);
