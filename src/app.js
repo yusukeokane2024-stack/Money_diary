@@ -323,6 +323,64 @@ function txRow(t, { onclick, showDate = false } = {}) {
     h('div', { class: 'amt num ' + (t.type === 'income' ? 'inc' : '') }, (t.type === 'expense' ? '-' : '+') + yen(t.amount)));
 }
 
+
+// ---------- gestures ----------
+/** シートを下へスワイプして閉じる (上端にいるときだけ。入力欄の操作は邪魔しない) */
+function swipeToClose(bg, close) {
+  const sheet = bg.querySelector('.sheet');
+  if (!sheet) return;
+  let y0 = 0, x0 = 0, t0 = 0, dy = 0, drag = false, tracking = false;
+  const reset = (animate) => {
+    sheet.style.transition = animate ? 'transform .18s ease-out' : '';
+    sheet.style.transform = '';
+    bg.style.background = '';
+  };
+  sheet.addEventListener('touchstart', (e) => {
+    tracking = e.touches.length === 1 && sheet.scrollTop <= 0 && !e.target.closest('input,select,textarea');
+    drag = false; dy = 0;
+    if (!tracking) return;
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; t0 = Date.now();
+    sheet.style.transition = '';
+  }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const t = e.touches[0];
+    dy = t.clientY - y0;
+    if (!drag) {
+      if (dy < 8 || Math.abs(t.clientX - x0) > dy) { if (dy < -8) tracking = false; return; }
+      drag = true;
+    }
+    e.preventDefault();
+    sheet.style.transform = `translateY(${Math.max(dy, 0)}px)`;
+    bg.style.background = `rgba(10,10,14,${Math.max(0, 0.42 * (1 - dy / 500)).toFixed(3)})`;
+  }, { passive: false });
+  const end = () => {
+    if (!tracking || !drag) { tracking = false; return; }
+    tracking = false; drag = false;
+    const fast = dy / Math.max(Date.now() - t0, 1) > 0.6;
+    if (dy > 110 || (fast && dy > 40)) {
+      sheet.style.transition = 'transform .16s ease-in';
+      sheet.style.transform = 'translateY(100%)';
+      setTimeout(close, 150);
+    } else reset(true);
+  };
+  sheet.addEventListener('touchend', end);
+  sheet.addEventListener('touchcancel', () => { tracking = false; drag = false; reset(true); });
+}
+
+/** 左右のスワイプ (縦スクロール優先。横に十分動いたときだけ反応) */
+function onSwipeX(el, { left, right }) {
+  let x0 = 0, y0 = 0, on = false;
+  el.addEventListener('touchstart', (e) => { on = e.touches.length === 1; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener('touchend', (e) => {
+    if (!on) return;
+    on = false;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    (dx < 0 ? left : right)();
+  });
+}
+
 // ---------- month view ----------
 function renderMonth() {
   const txs = monthItems();
@@ -419,6 +477,7 @@ function openBudget() {
     S.budget > 0 && h('button', { class: 'btn danger', onclick: () => save(0) }, '予算を解除'),
     h('button', { class: 'btn ghost', onclick: close }, 'キャンセル')));
   document.body.append(bg);
+  swipeToClose(bg, close);
   setTimeout(() => input.focus(), 50);
 }
 
@@ -456,15 +515,18 @@ function calendarCard(txs) {
     }))));
   const day = txs.filter((t) => t.date === S.selDay);
   const net = day.reduce((s, t) => s + (t.type === 'income' ? t.amount : -t.amount), 0);
-  return h('div', { class: 'card' }, cal,
+  const card = h('div', { class: 'card', 'data-cal-card': '' }, cal,
     h('div', { class: 'day-panel-head' },
       h('div', {}, h('b', {}, dayLabel(S.selDay)), day.length ? h('small', { class: 'num' }, (net < 0 ? '-' : '+') + yen(Math.abs(net))) : null),
       h('button', { class: 'btn sm', onclick: () => openSheet({ date: S.selDay }) }, icon('plus', 15), '追加')),
     day.length ? day.map((t) => txRow(t)) : h('div', { class: 'empty', style: 'padding:20px 16px 24px' }, 'この日の記録はありません'));
+  onSwipeX(card, { left: () => go(`#/month/${shiftMonth(S.month, 1)}`), right: () => go(`#/month/${shiftMonth(S.month, -1)}`) }); // 左へスワイプで翌月、右へで前月
+  return card;
 }
 
 // ---------- graph ----------
 let graphType = 'expense';
+let graphScope = LS.get('md:gscope') === 'year' ? 'year' : 'month';
 const expanded = new Set();
 const safeColor = (c) => (/^#[0-9a-fA-F]{6}$/.test(c) ? c : '#8a8b91');
 const svgEl = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; };
@@ -484,7 +546,7 @@ function donut(items, total) {
 }
 
 function trendChart(data) {
-  const W = 320, base = 118, top = 16, gw = W / data.length, bw = 13;
+  const W = 320, base = 118, top = 16, gw = W / data.length, bw = Math.min(13, (gw - 5) / 2);
   const max = Math.max(1, ...data.flatMap((d) => [d.income, d.expense]));
   const hgt = (v) => (v ? Math.max(2, (v / max) * (base - top)) : 0);
   const groups = data.map((d, i) => {
@@ -495,13 +557,45 @@ function trendChart(data) {
       + `<text x="${x}" y="${base + 18}" text-anchor="middle" class="tr-l">${+d.month.slice(5)}月</text></g>`;
   }).join('');
   const svg = svgEl(`<svg viewBox="0 0 ${W} 144" class="trend" role="img" aria-label="月別の収入と支出の推移"><line x1="0" x2="${W}" y1="${base}" y2="${base}" class="tr-axis"/>${groups}</svg>`);
-  svg.querySelectorAll('[data-m]').forEach((g) => g.addEventListener('click', () => go(`#/graph/${g.getAttribute('data-m')}`)));
+  svg.querySelectorAll('[data-m]').forEach((g) => g.addEventListener('click', () => { graphScope = 'month'; LS.set('md:gscope', graphScope); go(`#/graph/${g.getAttribute('data-m')}`); }));
   return svg;
+}
+
+/** 年の切り替えヘッダ (グラフの「年」表示) */
+function yearHeader() {
+  const to = (d) => go(`#/graph/${shiftMonth(S.month, d * 12)}`);
+  return {
+    title: h('span', { class: 'month-btn', style: 'cursor:default' }, `${S.month.slice(0, 4)}年`),
+    left: h('button', { class: 'icon-btn', onclick: () => to(-1), 'aria-label': '前の年' }, icon('chevron-left', 22)),
+    right: h('button', { class: 'icon-btn', onclick: () => to(1), 'aria-label': '次の年' }, icon('chevron-right', 22)),
+  };
+}
+
+/** その年の記録 + 予定 (読み込み前は null) */
+function yearItems() {
+  if (!S.all) return null;
+  const y = S.month.slice(0, 4), have = new Set(S.all.map((t) => t.id));
+  const sched = monthlyTrend.months(`${y}-12`, 12).flatMap((m) => scheduledIn(m, have));
+  return [...S.all.filter((t) => t.date.startsWith(y)), ...sched];
 }
 
 function renderGraph() {
   const type = graphType;
-  const items = monthItems();
+  const year = graphScope === 'year';
+  const items = year ? yearItems() : monthItems();
+  const scopeSeg = h('div', { class: 'seg', style: 'margin:12px 12px 0' },
+    [['month', '月'], ['year', '年']].map(([v, l]) => h('button', { class: graphScope === v ? 'on' : '', 'data-scope': v, onclick: () => { graphScope = v; LS.set('md:gscope', v); render(); } }, l)));
+  let yearSummary = null;
+  if (year) {
+    let inc = 0, exp = 0;
+    for (const t of items || []) { if (t.type === 'income') inc += t.amount; else exp += t.amount; }
+    const bal = inc - exp;
+    yearSummary = h('div', { class: 'card', 'data-year-summary': '' },
+      h('div', { class: 'summary-head' }, h('small', {}, `${S.month.slice(0, 4)}年の収支`), h('div', { class: 'balance num' }, items ? (bal < 0 ? '-' : '') + yen(Math.abs(bal)) : '…')),
+      h('div', { class: 'summary' },
+        h('div', { class: 's-inc' }, h('small', {}, '収入'), h('b', { class: 'num' }, items ? yen(inc) : '…')),
+        h('div', { class: 's-exp' }, h('small', {}, '支出'), h('b', { class: 'num' }, items ? yen(exp) : '…'))));
+  }
   const bd = categoryBreakdown(items || [], S.cats, type);
   const seg = h('div', { class: 'seg', style: 'margin:12px 12px 0' },
     [['expense', '支出'], ['income', '収入']].map(([v, l]) => h('button', { class: `${type === v ? 'on' : ''} ${v}`, 'data-type': v, onclick: () => { graphType = v; render(); } }, l)));
@@ -509,7 +603,7 @@ function renderGraph() {
   const catCard = h('div', { class: 'card' },
     h('div', { class: 'g-title' }, 'カテゴリ別'),
     items == null ? h('div', { class: 'empty' }, '読み込み中…')
-      : !bd.items.length ? h('div', { class: 'empty' }, `この月の${type === 'expense' ? '支出' : '収入'}はありません`)
+      : !bd.items.length ? h('div', { class: 'empty' }, `この${year ? '年' : '月'}の${type === 'expense' ? '支出' : '収入'}はありません`)
         : [donut(bd.items, bd.total), h('div', { class: 'g-list' }, bd.items.map((it) => {
           const open = expanded.has(`${type}:${it.id}`);
           const hasKids = it.children.length > 1 || (it.children[0] && it.children[0].id !== it.id);
@@ -525,9 +619,10 @@ function renderGraph() {
         }))]);
 
   // 月の収支と同じく、予定も含めて数える (含めないと今月・先の月の棒が上の合計と食い違う)
-  const trend = S.all ? monthlyTrend([...S.all, ...monthlyTrend.months(S.month, 6).flatMap((m) => scheduledIn(m, new Set(S.all.map((t) => t.id))))], S.month, 6) : null;
+  const trendEnd = year ? `${S.month.slice(0, 4)}-12` : S.month, trendN = year ? 12 : 6;
+  const trend = S.all ? monthlyTrend([...S.all, ...monthlyTrend.months(trendEnd, trendN).flatMap((m) => scheduledIn(m, new Set(S.all.map((t) => t.id))))], trendEnd, trendN) : null;
   const trendCard = h('div', { class: 'card' },
-    h('div', { class: 'g-title' }, '月別の推移', h('span', { class: 'tr-legend' }, h('i', { class: 'i-inc' }), '収入', h('i', { class: 'i-exp' }), '支出')),
+    h('div', { class: 'g-title' }, year ? '月ごとの収支' : '月別の推移', h('span', { class: 'tr-legend' }, h('i', { class: 'i-inc' }), '収入', h('i', { class: 'i-exp' }), '支出')),
     trend ? trendChart(trend) : h('div', { class: 'empty', style: 'padding:30px' }, '読み込み中…'));
 
   const mt = memberTotals(items || [], type);
@@ -538,8 +633,8 @@ function renderGraph() {
       h('div', { class: 'mid' }, h('div', { class: 't' }, S.members.get(m.id)?.name || '退出したメンバー'), h('div', { class: 'pbar' }, h('i', { style: `width:${(m.share * 100).toFixed(1)}%;background:var(--ink)` }))),
       h('div', { class: 'g-amt' }, h('b', { class: 'num' }, yen(m.total)), h('small', { class: 'num' }, `${Math.round(m.share * 100)}%`))))) : null;
 
-  const hd = monthHeader();
-  shell(hd.title, h('div', {}, seg, catCard, trendCard, memberCard), { left: hd.left, right: hd.right, fab: false });
+  const hd = year ? yearHeader() : monthHeader();
+  shell(hd.title, h('div', {}, scopeSeg, yearSummary, year ? trendCard : null, seg, catCard, year ? null : trendCard, memberCard), { left: hd.left, right: hd.right, fab: false });
 }
 
 // ---------- search (端末内の全件を検索) ----------
@@ -727,6 +822,7 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
     !isNew && !isSched && h('button', { class: 'btn danger', onclick: del }, '削除'),
     h('button', { class: 'btn ghost', onclick: close }, 'キャンセル')));
   document.body.append(bg);
+  swipeToClose(bg, close);
   setTimeout(() => amount.focus(), 50);
 }
 
@@ -818,6 +914,7 @@ function openCategory(cat) {
     !isNew && h('button', { class: 'btn danger', onclick: del }, '削除'),
     h('button', { class: 'btn ghost', onclick: close }, 'キャンセル')));
   document.body.append(bg);
+  swipeToClose(bg, close);
 }
 
 // ---------- settings / sharing ----------
@@ -912,6 +1009,7 @@ function openName() {
     h('label', {}, 'ニックネーム'), input, err, btn,
     h('button', { class: 'btn ghost', onclick: close }, 'キャンセル')));
   document.body.append(bg);
+  swipeToClose(bg, close);
   setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 

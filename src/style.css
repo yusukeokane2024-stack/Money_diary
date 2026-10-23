@@ -134,7 +134,7 @@ button.cal-cell:active{background:var(--fill)}
 .swatches button{width:28px;height:28px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line)}
 .swatches button.on{box-shadow:0 0 0 2px var(--ink)}
 .sheet-bg{position:fixed;inset:0;background:rgba(10,10,14,.42);z-index:20;display:flex;align-items:flex-end;justify-content:center;animation:fade .15s}
-.sheet{background:var(--card);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:26px 26px 0 0;padding:10px 18px calc(22px + env(safe-area-inset-bottom));animation:up .2s ease-out}
+.sheet{overscroll-behavior:contain;touch-action:pan-y;background:var(--card);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:26px 26px 0 0;padding:10px 18px calc(22px + env(safe-area-inset-bottom));animation:up .2s ease-out}
 .sheet::before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 12px}
 @keyframes up{from{transform:translateY(24px);opacity:.6}}
 @keyframes fade{from{opacity:0}}
@@ -234,3 +234,4 @@ button.cal-cell:active{background:var(--fill)}
 /* 変更の範囲 (この項目のみ / これ以降すべて) */
 .seg.scope{margin-top:2px}
 .form input:disabled{opacity:.5}
+.card[data-cal-card]{touch-action:pan-y}
