@@ -78,6 +78,18 @@ await swipe(cb.x + 60, cb.y + 120, cb.x + 300, cb.y + 120); // 右へ → 前月
 await a.waitForFunction((t) => document.querySelector('.month-btn')?.textContent.includes(t), label(month));
 await swipe(cb.x + 60, cb.y + 120, cb.x + 300, cb.y + 120);
 await a.waitForFunction((t) => document.querySelector('.month-btn')?.textContent.includes(t), label(shift(month, -1)));
+// 途中まで引くと指に追従し、離すと元に戻る (月は変わらない)
+{
+  await a.waitForTimeout(500);
+  const c0 = await box('.cal');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: c0.x + 200, y: c0.y + 100 }] });
+  for (let i = 1; i <= 4; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: c0.x + 200 - i * 10, y: c0.y + 100 }] });
+  const tx = await a.evaluate(() => new DOMMatrix(getComputedStyle(document.querySelector('[data-cal-card]')).transform).m41);
+  assert.ok(tx < -20 && tx > -45, `追従 ${tx}`);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await a.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('[data-cal-card]')).transform).m41 === 0);
+  assert.match(await monthText(), new RegExp(label(shift(month, -1))));
+}
 // 縦方向のスワイプでは月が変わらない
 cb = await box('.cal');
 await swipe(cb.x + 200, cb.y + 200, cb.x + 230, cb.y + 20);

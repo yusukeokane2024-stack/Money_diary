@@ -368,17 +368,51 @@ function swipeToClose(bg, close) {
   sheet.addEventListener('touchcancel', () => { tracking = false; drag = false; reset(true); });
 }
 
-/** 左右のスワイプ (縦スクロール優先。横に十分動いたときだけ反応) */
-function onSwipeX(el, { left, right }) {
-  let x0 = 0, y0 = 0, on = false;
-  el.addEventListener('touchstart', (e) => { on = e.touches.length === 1; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
-  el.addEventListener('touchend', (e) => {
-    if (!on) return;
-    on = false;
-    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    (dx < 0 ? left : right)();
+/** 次に作るカレンダーを、どちらから滑り込ませるか (1: 右から / -1: 左から)。短時間だけ有効 */
+let calEnter = null;
+const takeCalEnter = () => { const e = calEnter && Date.now() - calEnter.at < 1500 ? calEnter.dir : 0; calEnter = null; return e; };
+
+/** 指に追従して左右にスワイプ。十分動かせば画面外へ滑らせてから月を切り替える (縦スクロール優先) */
+function swipeMonth(el, { next, prev }) {
+  let x0 = 0, y0 = 0, t0 = 0, dx = 0, mode = 'idle'; // idle | track | drag | off
+  const W = () => el.offsetWidth || 360;
+  const apply = (x) => {
+    el.style.transform = `translateX(${x}px)`;
+    el.style.opacity = String(Math.max(0.35, 1 - Math.abs(x) / (W() * 1.2)));
+  };
+  el.addEventListener('touchstart', (e) => {
+    if (mode === 'off') return;
+    mode = e.touches.length === 1 ? 'track' : 'idle';
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); dx = 0;
+    el.style.transition = '';
+  }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    if (mode !== 'track' && mode !== 'drag') return;
+    const t = e.touches[0], mx = t.clientX - x0, my = t.clientY - y0;
+    if (mode === 'track') {
+      if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { mode = 'idle'; return; } // 縦スクロールに譲る
+      if (Math.abs(mx) < 10 || Math.abs(mx) < Math.abs(my) * 1.2) return;
+      mode = 'drag';
+    }
+    e.preventDefault();
+    dx = mx;
+    apply(dx * 0.9);
+  }, { passive: false });
+  const settle = () => {
+    el.style.transition = 'transform .2s cubic-bezier(.2,.8,.2,1), opacity .2s';
+    el.style.transform = ''; el.style.opacity = '';
+  };
+  el.addEventListener('touchend', () => {
+    if (mode !== 'drag') { mode = 'idle'; return; }
+    const fast = Math.abs(dx) / Math.max(Date.now() - t0, 1) > 0.5 && Math.abs(dx) > 30;
+    if (Math.abs(dx) < Math.min(90, W() * 0.25) && !fast) { mode = 'idle'; settle(); return; }
+    mode = 'off';
+    const dir = dx < 0 ? 1 : -1; // 左へ払う → 翌月 (次のカレンダーは右から入る)
+    el.style.transition = 'transform .16s ease-in, opacity .16s ease-in';
+    el.style.transform = `translateX(${-dir * W()}px)`; el.style.opacity = '0';
+    setTimeout(() => { calEnter = { dir, at: Date.now() }; (dir > 0 ? next : prev)(); mode = 'idle'; }, 140);
   });
+  el.addEventListener('touchcancel', () => { if (mode === 'drag') settle(); mode = 'idle'; });
 }
 
 // ---------- month view ----------
@@ -520,7 +554,9 @@ function calendarCard(txs) {
       h('div', {}, h('b', {}, dayLabel(S.selDay)), day.length ? h('small', { class: 'num' }, (net < 0 ? '-' : '+') + yen(Math.abs(net))) : null),
       h('button', { class: 'btn sm', onclick: () => openSheet({ date: S.selDay }) }, icon('plus', 15), '追加')),
     day.length ? day.map((t) => txRow(t)) : h('div', { class: 'empty', style: 'padding:20px 16px 24px' }, 'この日の記録はありません'));
-  onSwipeX(card, { left: () => go(`#/month/${shiftMonth(S.month, 1)}`), right: () => go(`#/month/${shiftMonth(S.month, -1)}`) }); // 左へスワイプで翌月、右へで前月
+  swipeMonth(card, { next: () => go(`#/month/${shiftMonth(S.month, 1)}`), prev: () => go(`#/month/${shiftMonth(S.month, -1)}`) }); // 左へスワイプで翌月、右へで前月
+  const enter = takeCalEnter();
+  if (enter) card.style.animation = `${enter > 0 ? 'calInR' : 'calInL'} .24s cubic-bezier(.2,.8,.2,1)`;
   return card;
 }
 

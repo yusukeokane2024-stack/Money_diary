@@ -235,3 +235,6 @@ button.cal-cell:active{background:var(--fill)}
 .seg.scope{margin-top:2px}
 .form input:disabled{opacity:.5}
 .card[data-cal-card]{touch-action:pan-y}
+@keyframes calInR{from{transform:translateX(38%);opacity:0}to{transform:none;opacity:1}}
+@keyframes calInL{from{transform:translateX(-38%);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.card[data-cal-card]{animation:none!important;transition:none!important}}
