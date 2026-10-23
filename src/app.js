@@ -290,17 +290,22 @@ function render() {
  * 表示する月の記録。実際の記録に、繰り返しの「予定」(まだ記録されていない未来分) を加えたもの。
  * 予定は保存されておらず、日付が来て記録されると自動で本物に置き換わる (nextN で二重計上を防ぐ)。
  */
-function monthItems() {
-  if (S.txs == null) return null;
-  const have = new Set(S.txs.map((t) => t.id)); // 記録済みと重なる予定は除く (書き込み直後の一瞬の二重表示を避ける)
+/** 指定月の「予定」(まだ記録されていない繰り返し分)。記録済みと重なるものは除く */
+function scheduledIn(month, have) {
   const sched = [];
   for (const r of S.recs) {
-    for (const { date } of upcomingInMonth(r, S.month)) {
+    for (const { date } of upcomingInMonth(r, month)) {
       const id = `r_${r.id}_${date}`;
       if (have.has(id)) continue;
       sched.push({ id: `p_${id}`, userId: r.userId, type: r.type, amount: r.amount, categoryId: r.categoryId ?? null, date, memo: r.memo || '', recurringId: r.id, scheduled: true });
     }
   }
+  return sched;
+}
+
+function monthItems() {
+  if (S.txs == null) return null;
+  const sched = scheduledIn(S.month, new Set(S.txs.map((t) => t.id))); // 書き込み直後の一瞬の二重表示を避ける
   if (!sched.length) return S.txs;
   return [...S.txs, ...sched].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.scheduled ? 0 : 1) - (b.scheduled ? 0 : 1)));
 }
@@ -519,7 +524,8 @@ function renderGraph() {
               h('div', { class: 'g-kid' }, h('span', {}, k.name), h('span', { class: 'num' }, `${yen(k.total)}  ${Math.round(k.share * 100)}%`)))));
         }))]);
 
-  const trend = S.all ? monthlyTrend(S.all, S.month, 6) : null;
+  // 月の収支と同じく、予定も含めて数える (含めないと今月・先の月の棒が上の合計と食い違う)
+  const trend = S.all ? monthlyTrend([...S.all, ...monthlyTrend.months(S.month, 6).flatMap((m) => scheduledIn(m, new Set(S.all.map((t) => t.id))))], S.month, 6) : null;
   const trendCard = h('div', { class: 'card' },
     h('div', { class: 'g-title' }, '月別の推移', h('span', { class: 'tr-legend' }, h('i', { class: 'i-inc' }), '収入', h('i', { class: 'i-exp' }), '支出')),
     trend ? trendChart(trend) : h('div', { class: 'empty', style: 'padding:30px' }, '読み込み中…'));

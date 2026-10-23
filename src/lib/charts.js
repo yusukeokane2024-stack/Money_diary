@@ -36,13 +36,18 @@ export function categoryBreakdown(txs, cats, type) {
 }
 
 /** endMonth を最後の月として、直近 n か月の収入・支出 */
-export function monthlyTrend(txs, endMonth, n = 6) {
+function trendMonths(endMonth, n) {
   const [y, m] = endMonth.split('-').map(Number);
   const months = [];
   for (let i = n - 1; i >= 0; i--) {
     const t = y * 12 + (m - 1) - i;
     months.push(`${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`);
   }
+  return months;
+}
+
+export function monthlyTrend(txs, endMonth, n = 6) {
+  const months = trendMonths(endMonth, n);
   const map = new Map(months.map((k) => [k, { month: k, income: 0, expense: 0 }]));
   for (const t of txs || []) {
     const e = map.get(t.date.slice(0, 7));
@@ -50,6 +55,7 @@ export function monthlyTrend(txs, endMonth, n = 6) {
   }
   return months.map((k) => map.get(k));
 }
+monthlyTrend.months = trendMonths;
 
 /** メンバーごとの合計 (割合の高い順) */
 export function memberTotals(txs, type) {
