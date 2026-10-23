@@ -267,7 +267,8 @@ function shell(title, body, { left, right, fab = true } = {}) {
   }
   const y = window.scrollY;
   $app.replaceChildren(...nodes);
-  window.scrollTo(0, cur === lastRoute ? y : 0); // データ更新での再描画ではスクロール位置を保つ
+  const kept = cur === 'month' ? keptY() : null;
+  window.scrollTo(0, kept ?? (cur === lastRoute ? y : 0)); // データ更新での再描画・スワイプでの月替えではスクロール位置を保つ
   lastRoute = cur;
 }
 
@@ -370,6 +371,9 @@ function swipeToClose(bg, close) {
 
 /** 次に作るカレンダーを、どちらから滑り込ませるか (1: 右から / -1: 左から)。短時間だけ有効 */
 let calEnter = null;
+/** スワイプで月を替えたとき、スクロール位置を保つ (読み込み中の短い画面でも位置が0に戻らないようにする) */
+let keepY = null;
+const keptY = () => (keepY && Date.now() - keepY.at < 5000 ? keepY.y : null);
 const takeCalEnter = () => { const e = calEnter && Date.now() - calEnter.at < 1500 ? calEnter.dir : 0; calEnter = null; return e; };
 
 /** 指に追従して左右にスワイプ。十分動かせば画面外へ滑らせてから月を切り替える (縦スクロール優先) */
@@ -410,7 +414,7 @@ function swipeMonth(el, { next, prev }) {
     const dir = dx < 0 ? 1 : -1; // 左へ払う → 翌月 (次のカレンダーは右から入る)
     el.style.transition = 'transform .16s ease-in, opacity .16s ease-in';
     el.style.transform = `translateX(${-dir * W()}px)`; el.style.opacity = '0';
-    setTimeout(() => { calEnter = { dir, at: Date.now() }; (dir > 0 ? next : prev)(); mode = 'idle'; }, 140);
+    setTimeout(() => { calEnter = { dir, at: Date.now() }; keepY = { y: window.scrollY, at: Date.now() }; (dir > 0 ? next : prev)(); mode = 'idle'; }, 140);
   });
   el.addEventListener('touchcancel', () => { if (mode === 'drag') settle(); mode = 'idle'; });
 }
@@ -454,13 +458,14 @@ function renderMonth() {
       h('button', { class: view === v ? 'on' : '', 'data-view': v, onclick: () => { LS.set('md:view', v); render(); } }, icon(ic, 16), l)));
 
   let main;
-  if (txs == null) main = h('div', { class: 'empty' }, '読み込み中…');
+  if (txs == null) main = h('div', { class: 'empty', style: keptY() != null ? `min-height:${keptY() + innerHeight}px` : '' }, '読み込み中…');
   else if (view === 'cal') main = calendarCard(txs);
   else if (!txs.length) main = h('div', { class: 'empty' }, 'この月の記録はありません', h('br'), '右下の ＋ から追加できます');
   else main = dayGroups(txs);
 
   const hd = monthHeader();
   shell(hd.title, h('div', {}, summary, toggle, main), { left: hd.left, right: hd.right });
+  if (txs) keepY = null; // 読み込みが済んだら位置の保持は終わり
 
   if (S.hl && txs) { // 検索からのジャンプ: 該当行へスクロールして強調
     const row = $app.querySelector(`[data-id="${S.hl}"]`);

@@ -90,11 +90,30 @@ await a.waitForFunction((t) => document.querySelector('.month-btn')?.textContent
   await a.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('[data-cal-card]')).transform).m41 === 0);
   assert.match(await monthText(), new RegExp(label(shift(month, -1))));
 }
+// 下へスクロールした状態でスワイプしても、スクロール位置は先頭に戻らない
+{
+  await a.setViewportSize({ width: 390, height: 520 });
+  await a.waitForTimeout(300);
+  const maxY = await a.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+  assert.ok(maxY > 120, `スクロールできる高さ ${maxY}`);
+  const y = Math.min(200, maxY);
+  await a.evaluate((v) => window.scrollTo(0, v), y);
+  const c1 = await box('.cal');
+  const m0 = await monthText();
+  await swipe(c1.x + 300, c1.y + 60, c1.x + 60, c1.y + 60);
+  await a.waitForFunction((t) => document.querySelector('.month-btn')?.textContent !== t, m0);
+  await a.waitForSelector('.cal-cell[data-date]');
+  await a.waitForTimeout(500);
+  const y1 = await a.evaluate(() => window.scrollY);
+  assert.ok(Math.abs(y1 - y) <= 60, `スクロール位置 ${y} → ${y1}`);
+  await a.setViewportSize({ width: 390, height: 800 });
+  await a.evaluate(() => window.scrollTo(0, 0));
+}
 // 縦方向のスワイプでは月が変わらない
 cb = await box('.cal');
 await swipe(cb.x + 200, cb.y + 200, cb.x + 230, cb.y + 20);
 await a.waitForTimeout(300);
-assert.match(await monthText(), new RegExp(label(shift(month, -1))));
+assert.match(await monthText(), new RegExp(label(month)));
 console.log('✓ カレンダー: 左スワイプで翌月 / 右で前月 / 縦スワイプでは動かない');
 
 // ---- グラフの年表示 ----
