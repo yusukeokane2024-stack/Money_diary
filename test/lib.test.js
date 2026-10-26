@@ -176,3 +176,28 @@ test('外貨: レート取得 (過去日は日付指定 / 今日以降は最新 
   assert.equal(await fetchRate('USD', '2026-10-01', '2026-10-26', down), null);
   assert.equal(await fetchRate('XXX', '2026-10-01', '2026-10-26', ok(1)), null);
 });
+
+import { evalExpr, cleanExpr, hasOperator } from '../src/lib/calc.js';
+
+test('計算: 足し算・引き算・掛け算・割り算・かっこ・優先順位', () => {
+  assert.equal(evalExpr('1200+850+300'), 2350);
+  assert.equal(evalExpr('1000-250'), 750);
+  assert.equal(evalExpr('100+50×2'), 200);
+  assert.equal(evalExpr('(100+50)×2'), 300);
+  assert.equal(evalExpr('1000÷4'), 250);
+  assert.equal(evalExpr('1000/4*3'), 750);          // / と * も使える
+  assert.equal(evalExpr('12.5+0.25'), 12.75);
+  assert.equal(evalExpr('-5+8'), 3);
+  assert.equal(evalExpr('１２００＋８５０'), 2050);   // 全角
+  assert.equal(evalExpr('1,200+800'), 2000);        // カンマ
+  assert.equal(evalExpr('500'), 500);
+});
+
+test('計算: 途中の式・不正な式・0での割り算は null / 余計な文字は除く', () => {
+  for (const bad of ['', '100+', '+', '(1+2', '1+2)', '5÷0', '1..2', '3×', '.']) assert.equal(evalExpr(bad), null, bad);
+  assert.equal(cleanExpr('12a+3b'), '12+3');
+  assert.equal(cleanExpr('2x3'), '2×3');
+  assert.equal(hasOperator('1200'), false);
+  assert.equal(hasOperator('-5'), false);
+  assert.equal(hasOperator('1200+5'), true);
+});

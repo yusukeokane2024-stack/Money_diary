@@ -4,7 +4,8 @@ import { searchTx } from './lib/search.js';
 import { icon, CATEGORY_ICONS } from './lib/icons.js';
 import { monthGrid, compactYen, amountSize, dayTotals } from './lib/calendar.js';
 import { dueOccurrences, upcomingInMonth, today as jstToday } from './lib/recurring.js';
-import { CURRENCIES, currencyOf, toYen, roundRate, cleanDecimal, fxText, fetchRate } from './lib/fx.js';
+import { cleanExpr, evalExpr, hasOperator } from './lib/calc.js';
+import { CURRENCIES, currencyOf, toYen, roundRate, fxText, fetchRate } from './lib/fx.js';
 import { categoryBreakdown, monthlyTrend, memberTotals, budgetStatus } from './lib/charts.js';
 
 /* global __BUILD__ */
@@ -747,8 +748,17 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   const canFx = !isRec && !fromRec;
   const fx0 = canFx && src.fx && currencyOf(src.fx.cur) ? src.fx : null;
   const fxs = { cur: fx0 ? fx0.cur : 'JPY', rate: fx0 ? fx0.rate : null, manual: !!fx0, token: 0 };
-  const amount = h('input', { class: 'amount-in', type: 'text', inputmode: 'numeric', placeholder: '0', value: fx0 ? String(fx0.amt) : src.amount ? String(src.amount) : '',
-    oninput: (e) => { e.target.value = fxs.cur === 'JPY' ? e.target.value.replace(/[^\d]/g, '') : cleanDecimal(e.target.value); drawFx(); } });
+  const amount = h('input', { class: 'amount-in', type: 'text', inputmode: 'decimal', placeholder: '0', value: fx0 ? String(fx0.amt) : src.amount ? String(src.amount) : '',
+    oninput: (e) => { e.target.value = cleanExpr(e.target.value); drawFx(); } });
+  /** 金額欄の式を計算した値 (円は整数、外貨は小数2桁に丸める)。計算できなければ NaN */
+  const calcAmt = () => { const v = evalExpr(amount.value); return v == null ? NaN : fxs.cur === 'JPY' ? Math.round(v) : Math.round(v * 100) / 100; };
+  const calcNote = h('div', { class: 'calc-note num' });
+  const calcKeys = h('div', { class: 'calc-keys' }, [['+', '+'], ['-', '−'], ['×', '×'], ['÷', '÷']].map(([ch, label]) =>
+    h('button', { type: 'button', 'aria-label': ch, 'data-op': ch, onclick: () => {
+      const p = amount.selectionStart ?? amount.value.length;
+      amount.value = cleanExpr(amount.value.slice(0, p) + ch + amount.value.slice(amount.selectionEnd ?? p));
+      amount.focus(); amount.setSelectionRange(p + 1, p + 1); drawFx();
+    } }, label)));
   const amountWrap = h('div', { class: 'amount-wrap' }, amount);
   const curSel = canFx && h('select', { 'aria-label': '通貨', 'data-cur': '', onchange: (e) => changeCur(e.target.value) },
     h('option', { value: 'JPY' }, '円 (JPY)'), CURRENCIES.map((c) => h('option', { value: c.code }, `${c.name} (${c.code})`)));
@@ -761,10 +771,13 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
     h('div', { class: 'fx-rate' }, h('span', {}, 'レート 1単位 ='), rateIn, h('span', {}, '円')), fxResult, fxNote);
   /** 入力中の外貨の内容 (円のときや未入力は null) */
   const currentFx = () => {
-    const a = Number(amount.value), r = Number(rateIn.value);
+    const a = calcAmt(), r = Number(rateIn.value);
     return fxs.cur !== 'JPY' && a > 0 && r > 0 ? { cur: fxs.cur, amt: a, rate: roundRate(r) } : null;
   };
   function drawFx() {
+    const cv = calcAmt();
+    amount.classList.toggle('long', amount.value.length > 9);
+    calcNote.textContent = hasOperator(amount.value) ? (Number.isNaN(cv) ? '' : `= ${fxs.cur === 'JPY' ? yen(cv) : cv.toLocaleString('en-US', { maximumFractionDigits: 2 })}`) : '';
     const c = currencyOf(fxs.cur);
     amountWrap.dataset.sym = c ? c.sym : '¥';
     amountWrap.style.setProperty('--sw', `${(c ? c.sym.length : 1) * 14 + 28}px`);
@@ -791,7 +804,8 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   function changeCur(code) {
     const wasJpy = fxs.cur === 'JPY';
     fxs.cur = code; fxs.manual = false; fxs.rate = null; rateIn.value = '';
-    amount.value = code === 'JPY' ? amount.value.replace(/\..*/, '') : cleanDecimal(amount.value);
+    const cv = calcAmt();
+    if (amount.value && !Number.isNaN(cv)) amount.value = String(code === 'JPY' ? Math.round(cv) : cv); // 式は計算結果にして、通貨に合う桁へ
     amount.inputMode = code === 'JPY' ? 'numeric' : 'decimal';
     if (code === 'JPY') { fxs.token++; fxNote.textContent = ''; } else if (wasJpy || true) loadRate();
     drawFx();
@@ -848,7 +862,8 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   const close = () => bg.remove();
   function save() {
     err.textContent = '';
-    let amt = Number(amount.value), fx = null;
+    let amt = calcAmt(), fx = null;
+    if (amount.value && Number.isNaN(amt)) return (err.textContent = '金額の式を確認してください (例: 1200+850)');
     if (fxs.cur !== 'JPY') {
       fx = currentFx();
       if (!fx) return (err.textContent = !(amt > 0) ? '金額を入力してください' : 'レートを入力してください');
@@ -894,7 +909,7 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   /** いま入力されている内容をベースに、新しい入力画面を開く (日付は今日 / 繰り返しは開始日を今日に) */
   function copyIt() {
     const cf = currentFx();
-    const base = { type: st.type, amount: cf ? toYen(cf.amt, cf.rate) : Number(amount.value) || src.amount, categoryId: st.categoryId, memo: memo.value.trim(), ...(cf ? { fx: cf } : {}) };
+    const base = { type: st.type, amount: cf ? toYen(cf.amt, cf.rate) : calcAmt() || src.amount, categoryId: st.categoryId, memo: memo.value.trim(), ...(cf ? { fx: cf } : {}) };
     close();
     if (isRec) openSheet({ rec: { ...base, freq: st.freq, every: Number(every.value) || 1, startDate: todayStr(), endDate: null, active: true }, copied: true });
     else openSheet({ tx: { ...base, date: todayStr() }, copied: true });
@@ -910,7 +925,7 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   bg.append(h('div', { class: 'sheet form' },
     h('h2', {}, copied ? (isRec ? '繰り返しをコピーして追加' : '記録をコピーして追加') : isRec ? (isNew ? '繰り返しを追加' : '繰り返しを編集') : isNew ? '記録を追加' : isSched ? '予定を編集' : '記録を編集'),
     h('div', { style: 'margin-top:10px' }, seg),
-    h('label', {}, '金額'), curSel, amountWrap, fxBox,
+    h('label', {}, '金額'), curSel, amountWrap, calcKeys, calcNote, fxBox,
     h('label', {}, isRec ? '開始日' : '日付'), date,
     h('label', {}, 'カテゴリ'), catBox,
     h('label', {}, 'メモ'), memo,

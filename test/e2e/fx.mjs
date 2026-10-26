@@ -137,6 +137,39 @@ await a.click('.fab');
 assert.equal(await a.locator('select[data-cur]').count(), 1);
 await a.click('.sheet .btn:has-text("キャンセル")');
 
+// ---- 金額欄の計算 (複数のレシート) ----
+fail = false;
+await a.click('.fab');
+await a.fill('.amount-in', '1200+850×2-100');
+assert.equal(await a.locator('.calc-note').textContent(), '= ¥2,800');
+await a.fill('.amount-in', '1200');
+assert.equal(await a.locator('.calc-note').isHidden(), true);   // 数字だけなら計算結果は出さない
+await a.click('.calc-keys [data-op="+"]');                       // ボタンで演算子を入れる
+await a.type('.amount-in', '350');
+assert.equal(await a.inputValue('.amount-in'), '1200+350');
+assert.equal(await a.locator('.calc-note').textContent(), '= ¥1,550');
+await a.fill('input[placeholder="例: ランチ"]', 'レシート合算');
+await a.fill('.sheet input[type=date]', d5);
+await a.click('.sheet .btn:has-text("保存")');
+await a.waitForSelector('.sheet', { state: 'detached' });
+await a.waitForSelector('.row:has-text("レシート合算")');
+assert.match(await a.locator('.row:has-text("レシート合算")').textContent(), /-¥1,550/);
+// 式が途中のまま保存しようとするとエラー / 割り算は四捨五入
+await a.click('.fab');
+await a.fill('.amount-in', '100+');
+await a.click('.sheet .btn:has-text("保存")');
+assert.match(await a.locator('.sheet .err').textContent(), /式を確認/);
+await a.fill('.amount-in', '1000÷3');
+assert.equal(await a.locator('.calc-note').textContent(), '= ¥333');
+// 外貨でも計算できる (小数も)
+await a.selectOption('select[data-cur]', 'USD');
+await a.fill('.amount-in', '10.5+4.5');
+await a.waitForFunction(() => document.querySelector('.rate-in')?.value !== '');
+assert.equal(await a.locator('.calc-note').textContent(), '= 15');
+assert.match(await result(), /= ¥2,238/);                         // 15 × 149.2 (日付は直前に入れた5日)
+await a.click('.sheet .btn:has-text("キャンセル")');
+console.log('✓ 金額の計算: 足し引き・掛け割り・ボタン入力・途中の式はエラー・外貨でも計算');
+
 assert.deepEqual(errors, []);
 await browser.close();
 console.log('E2E OK');
