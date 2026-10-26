@@ -4,6 +4,7 @@ import { searchTx } from './lib/search.js';
 import { icon, CATEGORY_ICONS } from './lib/icons.js';
 import { monthGrid, compactYen, amountSize, dayTotals } from './lib/calendar.js';
 import { dueOccurrences, upcomingInMonth, today as jstToday } from './lib/recurring.js';
+import { CURRENCIES, currencyOf, toYen, roundRate, cleanDecimal, fxText, fetchRate } from './lib/fx.js';
 import { categoryBreakdown, monthlyTrend, memberTotals, budgetStatus } from './lib/charts.js';
 
 /* global __BUILD__ */
@@ -314,7 +315,7 @@ function monthItems() {
 function txRow(t, { onclick, showDate = false } = {}) {
   const c = S.cats.get(t.categoryId);
   const who = S.members.size > 1 ? S.members.get(t.userId)?.name : null;
-  const sub = [showDate ? t.date.replaceAll('-', '/') : null, t.memo ? catName(t.categoryId) : null, who].filter(Boolean).join(' · ');
+  const sub = [showDate ? t.date.replaceAll('-', '/') : null, t.memo ? catName(t.categoryId) : null, fxText(t.fx) || null, who].filter(Boolean).join(' · ');
   const open = () => openSheet({ tx: t }); // 予定の行も同じ編集画面 (繰り返しの項目は「この項目のみ / これ以降すべて」を選べる)
   return h('button', { class: 'row' + (t.scheduled ? ' sched' : ''), 'data-id': t.id, onclick: onclick || open },
     catChip(c),
@@ -742,17 +743,69 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   const fromRec = !isRec && !isNew && src.recurringId ? S.recs.find((r) => r.id === src.recurringId) : null; // 繰り返しから作られた項目 (記録・予定)
   const isSched = !!src.scheduled;
   const st = { type: src.type || 'expense', categoryId: src.categoryId ?? null, freq: isRec ? src.freq || 'monthly' : '', every: src.every || 1, active: src.active !== false, scope: 'one' };
-  const amount = h('input', { class: 'amount-in', type: 'text', inputmode: 'numeric', placeholder: '0', value: src.amount ? String(src.amount) : '',
-    oninput: (e) => { e.target.value = e.target.value.replace(/[^\d]/g, ''); } });
+  // 外貨で入力 (通常の記録のみ。繰り返しや、繰り返し由来の項目は円のまま)
+  const canFx = !isRec && !fromRec;
+  const fx0 = canFx && src.fx && currencyOf(src.fx.cur) ? src.fx : null;
+  const fxs = { cur: fx0 ? fx0.cur : 'JPY', rate: fx0 ? fx0.rate : null, manual: !!fx0, token: 0 };
+  const amount = h('input', { class: 'amount-in', type: 'text', inputmode: 'numeric', placeholder: '0', value: fx0 ? String(fx0.amt) : src.amount ? String(src.amount) : '',
+    oninput: (e) => { e.target.value = fxs.cur === 'JPY' ? e.target.value.replace(/[^\d]/g, '') : cleanDecimal(e.target.value); drawFx(); } });
+  const amountWrap = h('div', { class: 'amount-wrap' }, amount);
+  const curSel = canFx && h('select', { 'aria-label': '通貨', 'data-cur': '', onchange: (e) => changeCur(e.target.value) },
+    h('option', { value: 'JPY' }, '円 (JPY)'), CURRENCIES.map((c) => h('option', { value: c.code }, `${c.name} (${c.code})`)));
+  if (curSel) curSel.value = fxs.cur;
+  const rateIn = h('input', { type: 'text', inputmode: 'decimal', class: 'rate-in', 'aria-label': '為替レート (1単位あたりの円)', value: fxs.rate ? String(fxs.rate) : '',
+    oninput: (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ''); fxs.manual = true; fxs.rate = Number(e.target.value) || null; drawFx(); } });
+  const fxResult = h('div', { class: 'fx-result num' });
+  const fxNote = h('div', { class: 'fx-note' });
+  const fxBox = h('div', { class: 'fx-box', hidden: true },
+    h('div', { class: 'fx-rate' }, h('span', {}, 'レート 1単位 ='), rateIn, h('span', {}, '円')), fxResult, fxNote);
+  /** 入力中の外貨の内容 (円のときや未入力は null) */
+  const currentFx = () => {
+    const a = Number(amount.value), r = Number(rateIn.value);
+    return fxs.cur !== 'JPY' && a > 0 && r > 0 ? { cur: fxs.cur, amt: a, rate: roundRate(r) } : null;
+  };
+  function drawFx() {
+    const c = currencyOf(fxs.cur);
+    amountWrap.dataset.sym = c ? c.sym : '¥';
+    amountWrap.style.setProperty('--sw', `${(c ? c.sym.length : 1) * 14 + 28}px`);
+    fxBox.hidden = !c;
+    if (!c) return;
+    const f = currentFx();
+    fxResult.textContent = f ? `= ${yen(toYen(f.amt, f.rate))}` : '= ¥0';
+  }
+  async function loadRate() {
+    const c = currencyOf(fxs.cur);
+    if (!c) return;
+    const token = ++fxs.token;
+    fxNote.textContent = 'レートを取得中…';
+    const r = await fetchRate(fxs.cur, date.value, todayStr());
+    if (token !== fxs.token || fxs.manual) return; // 通貨・日付が変わった / 手で直された
+    if (r) {
+      fxs.rate = r.rate; rateIn.value = String(r.rate);
+      fxNote.textContent = r.exact ? `${date.value.replaceAll('-', '/')}のレート (欧州中央銀行の参考レート)` : '最新のレート (日付ごとのレートは取れません)。必要なら直してください';
+    } else {
+      fxNote.textContent = 'レートを取得できませんでした。上の欄に入力してください';
+    }
+    drawFx();
+  }
+  function changeCur(code) {
+    const wasJpy = fxs.cur === 'JPY';
+    fxs.cur = code; fxs.manual = false; fxs.rate = null; rateIn.value = '';
+    amount.value = code === 'JPY' ? amount.value.replace(/\..*/, '') : cleanDecimal(amount.value);
+    amount.inputMode = code === 'JPY' ? 'numeric' : 'decimal';
+    if (code === 'JPY') { fxs.token++; fxNote.textContent = ''; } else if (wasJpy || true) loadRate();
+    drawFx();
+  }
   const date = h('input', { type: 'date', value: (isRec ? src.startDate : src.date) || defDate || todayStr() });
   const endDate = h('input', { type: 'date', value: src.endDate || '' });
+  date.addEventListener('change', () => { if (fxs.cur !== 'JPY' && isDate(date.value) && !fxs.manual) loadRate(); });
   const memo = h('input', { type: 'text', maxlength: 200, placeholder: '例: ランチ', value: src.memo || '' });
   const err = h('div', { class: 'err' });
   const catBox = h('div', { class: 'cats' });
   const seg = h('div', { class: 'seg' });
   const repeatBox = h('div', {});
   const every = h('input', { type: 'number', min: 1, max: 365, value: st.every });
-  const freqSel = h('select', { onchange: (e) => { st.freq = e.target.value; drawRepeat(); } },
+  const freqSel = h('select', { 'data-freq': '', onchange: (e) => { st.freq = e.target.value; drawRepeat(); } },
     [['', '繰り返さない'], ['daily', '毎日'], ['weekly', '毎週'], ['monthly', '毎月'], ['yearly', '毎年']]
       .filter(([v]) => !isRec || v).map(([v, l]) => h('option', { value: v, selected: v === st.freq }, l)));
 
@@ -795,10 +848,17 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   const close = () => bg.remove();
   function save() {
     err.textContent = '';
-    const amt = Number(amount.value);
-    if (!Number.isInteger(amt) || amt < 1 || amt > 999_999_999) return (err.textContent = '金額は1〜999,999,999の整数で入力してください');
+    let amt = Number(amount.value), fx = null;
+    if (fxs.cur !== 'JPY') {
+      fx = currentFx();
+      if (!fx) return (err.textContent = !(amt > 0) ? '金額を入力してください' : 'レートを入力してください');
+      amt = toYen(fx.amt, fx.rate);
+      if (amt < 1) return (err.textContent = '円に換算した金額が1円未満です');
+      if (amt > 999_999_999) return (err.textContent = '円に換算した金額が大きすぎます');
+    } else if (!Number.isInteger(amt) || amt < 1 || amt > 999_999_999) return (err.textContent = '金額は1〜999,999,999の整数で入力してください');
     if (!isDate(date.value)) return (err.textContent = '日付を入力してください');
     const body = { type: st.type, amount: amt, categoryId: st.categoryId, memo: memo.value.trim() };
+    if (canFx) body.fx = fx;
     if (fromRec) { // 繰り返しから作られた項目: 「この項目のみ」か「これ以降すべて」で保存
       const f = { ...body, date: st.scope === 'following' ? src.date : date.value };
       fire(D.saveOccurrence(S.bookId, src, f, st.scope, fromRec).then(() => D.materialize(S.bookId, S.recs)),
@@ -833,7 +893,8 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
   }
   /** いま入力されている内容をベースに、新しい入力画面を開く (日付は今日 / 繰り返しは開始日を今日に) */
   function copyIt() {
-    const base = { type: st.type, amount: Number(amount.value) || src.amount, categoryId: st.categoryId, memo: memo.value.trim() };
+    const cf = currentFx();
+    const base = { type: st.type, amount: cf ? toYen(cf.amt, cf.rate) : Number(amount.value) || src.amount, categoryId: st.categoryId, memo: memo.value.trim(), ...(cf ? { fx: cf } : {}) };
     close();
     if (isRec) openSheet({ rec: { ...base, freq: st.freq, every: Number(every.value) || 1, startDate: todayStr(), endDate: null, active: true }, copied: true });
     else openSheet({ tx: { ...base, date: todayStr() }, copied: true });
@@ -844,11 +905,12 @@ function openSheet({ tx = null, rec = null, date: defDate = null, copied = false
     close();
   }
 
-  drawSeg(); drawCats(); drawRepeat(); if (fromRec) drawScope();
+  drawSeg(); drawCats(); drawRepeat(); drawFx(); if (fromRec) drawScope();
+  if (fx0) fxNote.textContent = '記録したときのレートです。変えるときは直してください';
   bg.append(h('div', { class: 'sheet form' },
     h('h2', {}, copied ? (isRec ? '繰り返しをコピーして追加' : '記録をコピーして追加') : isRec ? (isNew ? '繰り返しを追加' : '繰り返しを編集') : isNew ? '記録を追加' : isSched ? '予定を編集' : '記録を編集'),
     h('div', { style: 'margin-top:10px' }, seg),
-    h('label', {}, '金額'), h('div', { class: 'amount-wrap' }, amount),
+    h('label', {}, '金額'), curSel, amountWrap, fxBox,
     h('label', {}, isRec ? '開始日' : '日付'), date,
     h('label', {}, 'カテゴリ'), catBox,
     h('label', {}, 'メモ'), memo,

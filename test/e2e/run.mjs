@@ -8,7 +8,7 @@ const cfg = JSON.parse(readFileSync('firebase.json', 'utf8'));
 for (const g of cfg.hosting.headers) for (const h of g.headers)
   if (h.key === 'Content-Security-Policy') h.value = h.value.replace("connect-src 'self'", "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*");
 writeFileSync('.firebase.emulator.json', JSON.stringify(cfg));
-const scripts = process.argv.length > 2 ? process.argv.slice(2) : ['test/e2e/e2e.mjs', 'test/e2e/recurring.mjs', 'test/e2e/copy.mjs', 'test/e2e/gestures.mjs'];
+const scripts = process.argv.length > 2 ? process.argv.slice(2) : ['test/e2e/e2e.mjs', 'test/e2e/recurring.mjs', 'test/e2e/copy.mjs', 'test/e2e/gestures.mjs', 'test/e2e/fx.mjs'];
 try {
   for (const script of scripts) {
     // エミュレータの一時的な接続断で稀に失敗するため、失敗したら1回だけやり直す (2回続けて失敗したら本物の失敗)

@@ -94,6 +94,15 @@ test('取引の検証: 不正な金額・日付・種類・余計なフィール
   await assertFails(setDoc(t('f'), tx({ memo: 'x'.repeat(201) })));
   await assertFails(setDoc(t('g'), tx({ extra: 1 })));
   await assertFails(setDoc(t('h'), tx({ userId: 'someone-else' }))); // なりすまし
+  // 外貨の情報 (fx) は、通貨・金額・レートが正しい形のときだけ
+  await assertSucceeds(setDoc(t('fx1'), tx({ fx: { cur: 'USD', amt: 25.5, rate: 149.2 } })));
+  await assertSucceeds(setDoc(t('fx2'), tx({ fx: null })));
+  await assertFails(setDoc(t('fx3'), tx({ fx: { cur: 'USD', amt: 0, rate: 149.2 } })));
+  await assertFails(setDoc(t('fx4'), tx({ fx: { cur: 'USD', amt: 1, rate: -1 } })));
+  await assertFails(setDoc(t('fx5'), tx({ fx: { cur: 'US', amt: 1, rate: 1 } })));
+  await assertFails(setDoc(t('fx6'), tx({ fx: { cur: 'USD', amt: 1, rate: 1, x: 1 } })));
+  await assertFails(setDoc(t('fx7'), tx({ fx: 'USD' })));
+  await assertSucceeds(updateDoc(t('fx1'), { fx: null }));
   // 更新で userId を書き換えられない
   await assertFails(updateDoc(t('ok'), { userId: 'bob' }));
   await assertSucceeds(updateDoc(t('ok'), { amount: 2000 }));

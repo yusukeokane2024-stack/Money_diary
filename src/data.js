@@ -174,7 +174,7 @@ export function setBudget(bookId, amount) {
 
 // ---------- 取引 ----------
 export function saveTx(bookId, id, t) {
-  const fields = { type: t.type, amount: t.amount, categoryId: t.categoryId ?? null, date: t.date, memo: t.memo || '' };
+  const fields = { type: t.type, amount: t.amount, categoryId: t.categoryId ?? null, date: t.date, memo: t.memo || '', fx: t.fx ?? null }; // fx: 外貨で入力したときの元の通貨・金額・レート
   if (id) return updateDoc(doc(col(bookId, 'transactions'), id), fields);
   return setDoc(doc(col(bookId, 'transactions')), { ...fields, userId: me().uid, recurringId: null, createdAt: serverTimestamp() });
 }

@@ -37,7 +37,7 @@ async function addViaSheet({ amount, memo, date, freq }) {
   await a.fill('.amount-in', String(amount));
   await a.fill('.sheet input[type=date]', date);
   await a.fill('input[placeholder="例: ランチ"]', memo);
-  if (freq) await a.selectOption('.sheet select', freq);
+  if (freq) await a.selectOption('.sheet select[data-freq]', freq);
   await a.click('.sheet .btn:has-text("保存")');
 }
 // 条件に合う表示になるまで待つ (固定の待ち時間だと、動作が少し遅れたときに失敗するため)
@@ -153,7 +153,7 @@ await a.click('a:has-text("家計簿")');
 await a.click('.row:has-text("ジム代")');
 await a.waitForSelector('.sheet h2:has-text("記録を編集")');
 assert.match(await a.textContent('.sheet .hint'), /1回目として/);       // 既存の記録にも「繰り返し」の選択が出る
-await a.selectOption('.sheet select', 'monthly');
+await a.selectOption('.sheet select[data-freq]', 'monthly');
 await a.click('.sheet .btn:has-text("保存")');
 await a.waitForSelector('.sheet', { state: 'detached' });
 await a.waitForTimeout(2500);
@@ -165,7 +165,7 @@ await a.waitForSelector('.row.sched:has-text("ジム代")');              // 翌
 await a.evaluate((m) => { location.hash = `#/month/${m}`; }, thisMonth);
 await a.click('.row:has-text("ジム代")');                               // 繰り返しから作られた記録を開くと、元の設定へ移れる
 await a.waitForSelector('.sheet .from-rec');
-assert.equal(await a.locator('.sheet select').count(), 0);
+assert.equal(await a.locator('.sheet select[data-freq]').count(), 0);
 await a.click('.sheet .from-rec button');
 await a.waitForSelector('.sheet h2:has-text("繰り返しを編集")');
 await a.click('.sheet .btn:has-text("キャンセル")');
@@ -176,7 +176,7 @@ await addViaSheet({ amount: 800, memo: 'ジム過去', date: addDays(today, -75)
 await a.waitForSelector('.row:has-text("ジム過去")');
 await a.click('.row:has-text("ジム過去")');
 await a.waitForSelector('.sheet h2:has-text("記録を編集")');
-await a.selectOption('.sheet select', 'monthly');
+await a.selectOption('.sheet select[data-freq]', 'monthly');
 await a.click('.sheet .btn:has-text("保存")');
 await a.waitForSelector('.sheet', { state: 'detached' });
 await a.waitForTimeout(3000);

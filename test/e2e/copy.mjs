@@ -83,7 +83,7 @@ await a.click('.fab');
 await a.fill('.amount-in', '5000');
 await a.fill('.sheet input[type=date]', today);
 await a.fill('input[placeholder="例: ランチ"]', 'ジム');
-await a.selectOption('.sheet select', 'monthly');
+await a.selectOption('.sheet select[data-freq]', 'monthly');
 await a.click('.sheet .btn:has-text("保存")');
 await a.waitForTimeout(2500);
 await a.click('a:has-text("設定")');
@@ -94,7 +94,7 @@ await a.waitForSelector('.sheet h2:has-text("繰り返しを編集")');
 await a.click('.sheet .btn:has-text("コピーして新規入力")');
 await a.waitForSelector('.sheet h2:has-text("繰り返しをコピーして追加")');
 assert.equal(await a.inputValue('.amount-in'), '5000');
-assert.equal(await a.inputValue('.sheet select'), 'monthly');                               // 頻度も引き継ぐ
+assert.equal(await a.inputValue('.sheet select[data-freq]'), 'monthly');                               // 頻度も引き継ぐ
 await a.fill('input[placeholder="例: ランチ"]', 'ジム 2つ目');
 await a.click('.sheet .btn:has-text("保存")');
 await a.waitForSelector('.row:has-text("ジム 2つ目")');

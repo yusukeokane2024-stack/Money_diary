@@ -134,3 +134,45 @@ test('予定: 未展開の分だけが、指定した月に出る', () => {
   const daily = { startDate: '2026-10-01', freq: 'daily', every: 1, nextN: 5, active: true };
   assert.equal(upcomingInMonth(daily, '2026-10').length, 26); // 10/6〜10/31
 });
+
+import { toYen, roundRate, cleanDecimal, fxText, fetchRate } from '../src/lib/fx.js';
+
+test('外貨: 円への換算は四捨五入 / レートは有効数字6桁', () => {
+  assert.equal(toYen(25.5, 149.2), 3805);      // 3804.6
+  assert.equal(toYen(100, 0.1072), 11);        // 10.72
+  assert.equal(toYen(0.01, 149), 1);           // 1.49
+  assert.equal(roundRate(149.23456789), 149.235);
+  assert.equal(roundRate(0.107234567), 0.107235);
+});
+
+test('外貨: 入力は数字と小数点1つ・小数2桁まで', () => {
+  assert.equal(cleanDecimal('12a.345.6'), '12.34');
+  assert.equal(cleanDecimal('..5'), '.5');
+  assert.equal(cleanDecimal('1,000'), '1000');
+});
+
+test('外貨: 記録に添える表示', () => {
+  assert.equal(fxText({ cur: 'USD', amt: 25.5, rate: 149 }), '$25.5');
+  assert.equal(fxText({ cur: 'CHF', amt: 10, rate: 170 }), 'CHF 10');
+  assert.equal(fxText({ cur: 'KRW', amt: 50000, rate: 0.1 }), '₩50,000');
+  assert.equal(fxText(null), '');
+});
+
+test('外貨: レート取得 (過去日は日付指定 / 今日以降は最新 / 失敗時は次の手段 / 全部失敗は null)', async () => {
+  const urls = [];
+  const ok = (rate) => async (u) => { urls.push(u); return { ok: true, json: async () => ({ rates: { JPY: rate } }) }; };
+  assert.deepEqual(await fetchRate('USD', '2026-10-01', '2026-10-26', ok(149.2)), { rate: 149.2, exact: true });
+  assert.match(urls[0], /frankfurter\.dev\/v1\/2026-10-01\?base=USD&symbols=JPY/);
+  assert.deepEqual(await fetchRate('USD', '2026-10-26', '2026-10-26', ok(150)), { rate: 150, exact: false });
+  assert.match(urls[1], /\/v1\/latest\?/);
+  // TWD は最新レートのみ
+  assert.deepEqual(await fetchRate('TWD', '2026-10-01', '2026-10-26', ok(4.7)), { rate: 4.7, exact: false });
+  assert.match(urls[2], /open\.er-api\.com\/v6\/latest\/TWD/);
+  // 1つ目が失敗したら2つ目
+  let n = 0;
+  const flaky = async () => { if (n++ === 0) throw new Error('net'); return { ok: true, json: async () => ({ rates: { JPY: 151 } }) }; };
+  assert.deepEqual(await fetchRate('EUR', '2026-10-01', '2026-10-26', flaky), { rate: 151, exact: false });
+  const down = async () => { throw new Error('net'); };
+  assert.equal(await fetchRate('USD', '2026-10-01', '2026-10-26', down), null);
+  assert.equal(await fetchRate('XXX', '2026-10-01', '2026-10-26', ok(1)), null);
+});
