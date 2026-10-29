@@ -193,7 +193,9 @@ button.cal-cell:active{background:var(--fill)}
 .g-amt b{font-weight:650}.g-amt small{color:var(--sub);font-size:11.5px}
 .chev.open svg{transform:rotate(180deg)}
 .g-kids{padding:0 18px 10px 68px}
-.g-kid{display:flex;justify-content:space-between;font-size:13px;color:var(--sub);padding:4px 0}
+.g-kid{display:flex;justify-content:space-between;width:100%;border:0;background:none;font:inherit;font-size:13px;color:var(--sub);padding:8px 0;cursor:pointer;text-align:left}
+.g-kid:active{opacity:.6}
+.g-chev{padding:10px;margin:-10px -10px -10px 0;box-sizing:content-box;display:flex;cursor:pointer}
 .trend{width:100%;display:block;padding:6px 10px 10px}
 .tr-axis{stroke:var(--line);stroke-width:1}
 .tr-i{fill:var(--inc)}.tr-e{fill:var(--exp)}
@@ -253,3 +255,9 @@ button.cal-cell:active{background:var(--fill)}
 .calc-keys button:active{opacity:.6}
 .calc-note{min-height:0;margin-top:6px;text-align:right;font-size:18px;font-weight:700;color:var(--sub)}
 .calc-note:empty{display:none}
+
+.cat-list .cl-head{display:flex;align-items:center;gap:12px;margin:6px 0 8px}
+.cl-title{flex:1;min-width:0;display:flex;flex-direction:column}
+.cl-title small{color:var(--sub);font-size:12px;margin-top:2px}
+.cl-total{font-size:18px}
+.cl-rows .row{padding-left:0;padding-right:0}

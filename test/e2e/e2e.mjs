@@ -219,6 +219,20 @@ await a.waitForSelector('svg.trend .tr-g.cur');
 assert.match(await a.textContent('svg.trend .tr-g.cur'), new RegExp(`${+thisMonth.slice(5)}月`));
 assert.equal(await a.locator('svg.trend .tr-g').count(), 6);
 assert.match(await a.textContent('.card:has-text("メンバー別")'), /たろう[\s\S]*¥1,280[\s\S]*はなこ[\s\S]*¥300/);
+// カテゴリをタップ → そのカテゴリの記録の一覧
+await a.click('.g-row:has-text("食費")');
+await a.waitForSelector('[data-cat-list]');
+const catList = await a.textContent('[data-cat-list]');
+assert.match(catList, /食費/);
+assert.match(catList, /¥1,280/);
+assert.ok(!/¥300/.test(catList), '他のカテゴリは含まない');
+await a.click('[data-cat-list] .row');            // 行をタップで編集画面へ
+await a.waitForSelector('.sheet h2:has-text("記録を編集")');
+await a.click('.sheet .btn:has-text("キャンセル")');
+await a.click('.g-row:has-text("未分類")');
+assert.match(await a.textContent('[data-cat-list]'), /¥300/);
+await a.click('[data-cat-list] .btn:has-text("閉じる")');
+await a.waitForSelector('[data-cat-list]', { state: 'detached' });
 await a.screenshot({ path: `${SHOTS}/fb-graph.png` });
 await a.click('button[data-type=income]');
 await a.waitForSelector('text=この月の収入はありません');

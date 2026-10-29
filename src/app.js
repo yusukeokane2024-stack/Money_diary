@@ -622,6 +622,29 @@ function yearItems() {
   return [...S.all.filter((t) => t.date.startsWith(y)), ...sched];
 }
 
+/** グラフのカテゴリをタップ: そのカテゴリ (子カテゴリを含む) の記録を、いまの月 / 年の分だけ一覧で見る */
+function openCategoryList({ type, rootId, kidId = null, name, color, icon: ic, year }) {
+  const all = (year ? yearItems() : monthItems()) || [];
+  const list = all.filter((t) => t.type === type
+    && (rootOf(t.categoryId)?.id ?? '_none') === rootId
+    && (kidId == null || (S.cats.get(t.categoryId)?.id ?? '_none') === kidId))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const total = list.reduce((n, t) => n + t.amount, 0);
+  const period = year ? `${S.month.slice(0, 4)}年` : `${S.month.slice(0, 4)}年${+S.month.slice(5)}月`;
+  const bg = h('div', { class: 'sheet-bg', onclick: (e) => e.target === bg && close() });
+  const close = () => bg.remove();
+  bg.append(h('div', { class: 'sheet form cat-list', 'data-cat-list': '' },
+    h('div', { class: 'cl-head' },
+      h('div', { class: 'ic', style: `--c:${safeColor(color)}` }, icon(ic || 'tag', 20)),
+      h('div', { class: 'cl-title' }, h('b', {}, name), h('small', {}, `${period} ・ ${list.length}件`)),
+      h('b', { class: 'num cl-total' }, yen(total))),
+    list.length ? h('div', { class: 'cl-rows' }, list.map((t) => txRow(t, { showDate: true, onclick: () => { close(); openSheet({ tx: t }); } })))
+      : h('div', { class: 'empty', style: 'padding:24px 0' }, '記録はありません'),
+    h('button', { class: 'btn ghost', onclick: close }, '閉じる')));
+  document.body.append(bg);
+  swipeToClose(bg, close);
+}
+
 function renderGraph() {
   const type = graphType;
   const year = graphScope === 'year';
@@ -650,15 +673,17 @@ function renderGraph() {
         : [donut(bd.items, bd.total), h('div', { class: 'g-list' }, bd.items.map((it) => {
           const open = expanded.has(`${type}:${it.id}`);
           const hasKids = it.children.length > 1 || (it.children[0] && it.children[0].id !== it.id);
+          const toggle = (e) => { e.stopPropagation(); const k = `${type}:${it.id}`; expanded.has(k) ? expanded.delete(k) : expanded.add(k); render(); };
           return h('div', { class: 'g-item' },
-            h('button', { class: 'row g-row', 'aria-expanded': open ? 'true' : 'false', onclick: () => { const k = `${type}:${it.id}`; expanded.has(k) ? expanded.delete(k) : expanded.add(k); render(); } },
+            h('button', { class: 'row g-row', 'data-cat': it.id, 'aria-label': `${it.name}の記録を見る`, onclick: () => openCategoryList({ type, rootId: it.id, name: it.name, color: it.color, icon: it.icon, year }) },
               h('div', { class: 'ic', style: `--c:${safeColor(it.color)}` }, icon(it.icon, 20)),
               h('div', { class: 'mid' }, h('div', { class: 't' }, it.name),
                 h('div', { class: 'pbar' }, h('i', { style: `width:${(it.share * 100).toFixed(1)}%;background:${safeColor(it.color)}` }))),
               h('div', { class: 'g-amt' }, h('b', { class: 'num' }, yen(it.total)), h('small', { class: 'num' }, `${(it.share * 100).toFixed(it.share < 0.1 ? 1 : 0)}%`)),
-              hasKids && h('span', { class: 'chev' + (open ? ' open' : ''), style: 'display:flex;color:var(--sub)' }, icon('chevron-down', 18))),
+              hasKids && h('span', { class: 'chev g-chev' + (open ? ' open' : ''), role: 'button', 'aria-expanded': open ? 'true' : 'false', 'aria-label': '内訳を開閉', onclick: toggle }, icon('chevron-down', 18))),
             open && hasKids && h('div', { class: 'g-kids' }, it.children.map((k) =>
-              h('div', { class: 'g-kid' }, h('span', {}, k.name), h('span', { class: 'num' }, `${yen(k.total)}  ${Math.round(k.share * 100)}%`)))));
+              h('button', { class: 'g-kid', 'data-kid': k.id, onclick: () => openCategoryList({ type, rootId: it.id, kidId: k.id, name: k.name, color: it.color, icon: it.icon, year }) },
+                h('span', {}, k.name), h('span', { class: 'num' }, `${yen(k.total)}  ${Math.round(k.share * 100)}%`)))));
         }))]);
 
   // 月の収支と同じく、予定も含めて数える (含めないと今月・先の月の棒が上の合計と食い違う)
