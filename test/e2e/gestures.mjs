@@ -167,6 +167,32 @@ await a.locator(`svg.trend [data-m="${y}-01"]`).dispatchEvent('click');
 await a.waitForSelector('[data-scope=month].on');
 console.log('✓ グラフの年表示: 年間の収入/支出/収支・12か月の棒・年の切り替え・棒タップで月へ');
 
+// ---- 開いたとき / しばらくぶりに戻ったとき: 今月・今日が選択されている ----
+const todayCell = `.cal-cell[data-date="${today}"]`;
+const setVis = (v) => a.evaluate((x) => { Object.defineProperty(document, 'visibilityState', { get: () => x, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); }, v);
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, shift(month, -2));
+await a.waitForFunction((t) => document.querySelector('.month-btn')?.textContent.includes(t), label(shift(month, -2)));
+await a.click('.cal-cell[data-date$="-10"]');
+// すぐ戻ったときは、見ていた場所のまま
+await setVis('hidden'); await setVis('visible');
+await a.waitForTimeout(300);
+assert.match(await monthText(), new RegExp(label(shift(month, -2))));
+// 10分以上離れて戻ると、今月 + 今日を選択
+await setVis('hidden');
+await a.evaluate(() => { const real = Date.now; Date.now = () => real() + 11 * 60e3; });
+await setVis('visible');
+await a.waitForFunction((t) => document.querySelector('.month-btn')?.textContent.includes(t), label(month));
+await a.waitForSelector(`${todayCell}.sel`);
+// アプリを開き直したとき (前回見ていた月ではなく今月から)
+await a.evaluate((m) => { location.hash = `#/month/${m}`; }, shift(month, -3));
+await a.waitForFunction((t) => document.querySelector('.month-btn')?.textContent.includes(t), label(shift(month, -3)));
+await a.waitForTimeout(800); // 前回の画面の保存を待つ
+await a.goto(`${BASE}/?emulator=1`);
+await a.waitForSelector('.cal-cell[data-date]');
+await a.waitForFunction((t) => document.querySelector('.month-btn')?.textContent.includes(t), label(month));
+await a.waitForSelector(`${todayCell}.sel`);
+console.log('✓ 開いたとき・しばらくぶりに戻ったとき: 今月・今日が選択される (すぐ戻ったときは保つ)');
+
 assert.deepEqual(errors, []);
 await browser.close();
 console.log('E2E OK');

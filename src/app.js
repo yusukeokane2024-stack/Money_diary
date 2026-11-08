@@ -119,8 +119,10 @@ function saveSnap() {
   }, 300);
 }
 function hydrate(s) {
-  S.me = s.me; S.books = s.books; S.bookId = s.bookId; S.month = s.month;
-  setCats(s.cats); S.members = new Map(s.members.map((m) => [m.id, m])); S.recs = s.recs; S.txs = s.txs; S.budget = s.budget || 0;
+  // 開いたときは、前回見ていた月ではなく今月 (今日を選択した状態) から始める
+  const thisMonth = todayStr().slice(0, 7);
+  S.me = s.me; S.books = s.books; S.bookId = s.bookId; S.month = thisMonth; S.selDay = null;
+  setCats(s.cats); S.members = new Map(s.members.map((m) => [m.id, m])); S.recs = s.recs; S.txs = s.month === thisMonth ? s.txs : null; S.budget = s.budget || 0;
 }
 
 // ---------- data wiring ----------
@@ -1207,11 +1209,24 @@ function renderAuth(mode = 'login') {
       h('label', {}, 'メールアドレス'), email, h('label', {}, 'パスワード'), pw, err, btn)));
 }
 
+/** 今月・今日を選択した状態に戻す (月・グラフの画面にいるときは今月へ移動) */
+function backToToday() {
+  const m = todayStr().slice(0, 7);
+  S.selDay = null;
+  const tab = route().parts[0];
+  if (S.bookId && (tab === 'month' || tab === 'graph' || !tab) && S.month !== m) go(`#/${tab === 'graph' ? 'graph' : 'month'}/${m}`);
+  else render();
+}
+
 // ---------- boot ----------
 async function boot() {
   // ホーム画面から開いたアプリは再読み込みされず再開されるため、戻ってきたときに日付の変化と繰り返し分を反映する
+  let hiddenAt = 0, hiddenDay = '';
   document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); hiddenDay = todayStr(); return; }
     if (document.visibilityState !== 'visible') return;
+    // しばらく離れていた / 日付が変わったときは、今月・今日の表示に戻す (すぐ戻ったときは、見ていた場所のまま)
+    if (S.me && hiddenAt && (Date.now() - hiddenAt > 10 * 60 * 1000 || todayStr() !== hiddenDay)) backToToday();
     navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {}); // 新しい版が公開されていれば取り込む
     runMaterialize();
     if (S.me) changed();
@@ -1228,6 +1243,7 @@ async function boot() {
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !reloaded) { reloaded = true; location.reload(); } });
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
+  if (/^#\/(month|graph)\/\d{4}-\d{2}/.test(location.hash)) history.replaceState(null, '', location.hash.replace(/\/\d{4}-\d{2}.*$/, '')); // 開いたときは今月から
   const m = /^#\/join\/(.+)$/.exec(location.hash);
   if (m) sessionStorage.setItem('md:join', decodeURIComponent(m[1]));
 
